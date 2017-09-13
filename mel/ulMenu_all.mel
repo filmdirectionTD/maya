@@ -1,0 +1,157 @@
+//--------------------------------------------------------
+//Copyright (c) 2008 Alexander Sknarin
+//witchre.Lutojar@gmail.com
+//
+//Main ULITKA Maya Menu entries
+//Menu root created in userSetup.mel
+//
+//---------------------------------------------------------
+
+
+global proc ulMenu_all()
+{
+	//----MANAGE MENU---------------------------------------
+	menuItem -l "MANAGE" -sm true -to true;
+		menuItem -l "Project Manager"
+				 -ann "Project Manager Window"
+				 -c "pmUIManagerWindow";
+		menuItem -l "Clean Shelf PopUps"
+				 -ann "Clean default maya popUps on Ulitka Shelf"
+				 -c "as_cleanShelves();";
+        menuItem -divider true;
+		menuItem -l "Maya" -sm true -to true;
+			menuItem -l "Clean Turtle Nodes"
+					 -annotation "Unlock and delete glitchy Turtle nodes from scene"
+					 -c "fd_TurtleClean";
+			setParent -menu ..;
+		menuItem -l "Nuke" -sm true -to true;
+			menuItem -l "Export Selected To NUKE"
+					 -annotation "Select object and camera you want export to nuke. Save file as <filename>.nk"
+					 -c "pass2nuke";
+			menuItem -l "Export Track Point NUKE"
+					 -annotation "Export trackPoint information for Nuke. Select trackPoint locator and call script"
+					 -c "exportTrackPointNuke";
+			setParent -menu ..;
+		menuItem -l "Shake" -sm true -to true;
+			menuItem -l "Export Track Point SHAKE"
+					 -annotation "Export trackPoint information for SHAKE program. Select trackPoint locator and call script"
+					 -c "exportTrackPointShake";
+			setParent -menu ..;
+		menuItem -l "After Effects" -sm true -to true;
+			menuItem -l "Export Track Point AE"
+					 -annotation "Export trackPoint information for Afer Effects program. Select trackPoint locator and call script"
+					 -c "exportTrackPointAE";
+			setParent -menu ..;
+		menuItem -divider true;
+		menuItem -l "Export Cam Chan..."
+				 -annotation "Export camera chan file <frame tx ty tz rx ry rz fovv>"
+				 -c "source DD_Import_Export;exportCamChan();";
+	    menuItem -l "Export Obj Chan.."
+				 -annotation "Export object chan file <frame tx ty tz rx ry rz>"
+				 -c "source DD_Import_Export;exportObjChan();";
+		menuItem -l "Export Many Obj Chan..."
+				 -annotation "Export several object chan files <frame tx ty tz rx ry rz>, filename = node's name"
+				 -c "source DD_Import_Export;exportManyObjChan();";
+		menuItem -l "Import New Traks to Cameras"
+				 -annotation "Checks to see if any of the cameras have the extra attribute TrackCamFile on the shape node if they have then it was loaded with the new track import"
+				 -c "source DD_Import_Export;Track_CheckSceneCameras();";
+		setParent -menu ..;
+	menuItem -divider true;
+	
+	
+	//----ANIMATION MENU------------------------------------
+	menuItem -l "ANIMATION" -sm true -to true;
+		menuItem -l "ajr Time Warp"
+				 -ann "creates Time Warp curve for all"
+				 -c "ajrTimeWarp";
+		menuItem -l "Rivet"
+				 -ann "Select two edges to create locator constrained to them"
+				 -c "rivet";
+		menuItem -l "Ulitka Cache Tools"
+				 -ann "Toolset to quick import/export/delete geometry caches"
+				 -c "source ul_CacheTools.mel;ul_CacheTools_UI();";
+		menuItem -l "Bake Objects to world"
+				 -ann "Select object inside hierarchy to bake it out"
+				 -c "python(\"from as_BakeToWorld import *\"); python(\"as_BakeToWorld()\")";
+		setParent -menu ..;
+	menuItem -divider true;
+	
+	
+	//----DEFORMERS MENU-------------------------------------
+	menuItem -l "DEFORMERS";
+	menuItem -divider true;
+	
+	
+	//----MODELLING MENU-------------------------------------
+	menuItem -l "MODELLING" -sm true -to true;
+		menuItem -l "Move Center To Vertex"
+				 -ann "Move object pivot point to center of selected components"
+				 -c "as_MoveCenterToVertex";
+		menuItem -l "Locator To Vertex"
+				 -ann "Create locator at the center of selected components"
+				 -c "as_LocatorToVertex";
+		menuItem -l "Toggle Live Edit Mode"
+				 -ann "ON or OFF Live Edit Mode - transform vertices on a surface"
+				 -c "python (\"import as_Live_Edit\");python (\"as_Live_Edit.as_live_edit()\");";
+		menuItem -l "Create Tube"
+				 -ann "Creates tube from selected NURBS curve or isoparm"
+				 -c "createTube";
+		menuItem -l "Select Geometry Duplicates"
+				 -ann "Select duplicated objects"
+				 -c "loadPlugin as_selectGeometryDuplicates; as_selectGeometryDuplicates;";
+ 		menuItem -l "xyShrinkWrap"
+				 -ann "Shrink Wrap for any components i.e. curvepoints"
+				 -c "source xyShrinkWrap.mel; xyShrinkWrap;";
+ 		menuItem -l "Cleanup Materials"
+				 -ann "Set all geometry to default Lambert1 and deletes all other render nodes"
+				 -c "python(\"from as_cleanMaterials import *\"); python(\"as_cleanMaterials()\")";
+		setParent -menu ..;
+	menuItem -divider true;
+	
+	
+	//----FX MENU--------------------------------------------
+	menuItem -l "FX";
+	menuItem -divider true;
+	
+	
+	//----RENDER MENU----------------------------------------
+	menuItem -l "RENDER" -sm true -to true;
+		menuItem -l "create RIS camera projection"
+				 -ann "create RIS camera projection"
+				 -c "fd_createRIScameraProjection();";
+		menuItem -l "create RIS Daylight Control"
+				 -ann "create RIS Daylight Control"
+				 -c "fd_RIS_addDaylightControl();";
+		menuItem -l "Set Motion Samples"
+				 -ann "GUI to add and remove Motion samples"
+				 -c "source as_setMotionSamples.mel; as_setMotionSamplesUI();";
+		menuItem -divider true;
+		menuItem -l "_ul_Add Attribute"
+				 -ann "add attribute to maya object and generate TCL script for slim to use it in shaders"
+				 -c "source \"ul_addAttribute.mel\"; ul_addAttribute_UI";
+		menuItem -divider true;
+		menuItem -l "Duma for Maya"
+				 -ann "Spool maya batch render to Duma"
+				 -c "python(\"import cgCrewUI\"); python(\"cgCrewUI.cgcrewAlfGen()\")";
+		setParent -menu ..;
+	menuItem -divider true;
+	
+	
+	//----CAMERA MENU----------------------------------------
+	menuItem -l "CAMERA" -sm true -to true;
+		menuItem -l "Create FD Camera"
+				 -ann "creates custom camera with custom features and attributes"
+				 -c "source fd_createCamera.mel; fd_createCamera;";
+		menuItem -l "Camera Zoomerate"
+				 -ann "Tool for pan and zoom camera: LMB - Zoom, RMB - pan, SHIFT+LMB - reset"
+				 -c "cameraZoomerate";
+		menuItem -l "Add DOF controls"
+				 -ann "Select camera to add aditionak control of DOF + focus position locator"
+				 -c "ulAddDOFControls";
+		menuItem -l "Bake camera to world"
+				 -ann "Select camera to duplicate it and bake its animation to world"
+				 -c "python(\"from as_cameraBakeToWorld import *\");python(\"as_cameraBakeToWorld_GUI()\");";
+		setParent -menu ..;	
+	
+	
+}

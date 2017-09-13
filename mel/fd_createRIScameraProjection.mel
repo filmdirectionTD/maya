@@ -1,0 +1,28 @@
+global proc fd_createRIScameraProjection()
+{
+	// Get Objects
+	$currentCam = `ls -sl`;       // Selected camera
+	string $cameraShapes[] = `listRelatives -s $currentCam[0]`; // Get Camera shape node name
+	rmanAddCoordSys();            // create new CoordSys and attach it to camera
+	$newCoordSys = `ls -sl`;      // and get its name
+	createNode PxrProjector;      // create Projection manifold
+	$newPxrProjector = `ls -sl`;  // and get its name
+
+	// Get current render resolution
+	int $HorisontalRez = `getAttr -as defaultResolution.width`;
+	int$VerticalRez   = `getAttr -as defaultResolution.height`;
+
+	// Set Projection Base Attributes
+	setAttr -type "string" ($newPxrProjector[0]+".coordsys") $newCoordSys[0]; // coordSys name from camera
+	setAttr ($newPxrProjector[0]+".resolutionX") $HorisontalRez;              // Initial Image Resolution
+	setAttr ($newPxrProjector[0]+".resolutionY") $VerticalRez;                //
+	setAttr ($newPxrProjector[0]+".invertT") 0;
+
+
+	// make connections
+	connectAttr -f ($cameraShapes[0]+".focalLength") ($newPxrProjector[0]+".focalLength"); // Lens Focal length
+	connectAttr -f ($cameraShapes[0]+".horizontalFilmAperture") ($newPxrProjector[0]+".apertureX"); // Horizontal Apperture size
+	connectAttr -f ($cameraShapes[0]+".verticalFilmAperture") ($newPxrProjector[0]+".apertureY");   // Vertical Apperture size
+	connectAttr -f ($cameraShapes[0]+".nearClipPlane") ($newPxrProjector[0]+".nearClipPlane");      // Near clip plane
+	connectAttr -f ($cameraShapes[0]+".farClipPlane") ($newPxrProjector[0]+".farClipPlane");        // far clip plane
+}

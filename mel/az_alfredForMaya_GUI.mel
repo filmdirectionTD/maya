@@ -1,0 +1,1328 @@
+////////////////////////////////////////////////////////////////////////////////
+//  
+//  Script File
+//  MODIFY THIS AT YOUR OWN RISK
+//
+//
+//  Creation Date:  3 June 2005					      
+//
+//  Last revision date: 10 July 2006
+//
+//  Copyright (c) 2006 Alexey Mazurenko aka Archie Zbyshek
+//  Autor: Alexey Mazurenko aka Archie Zbyshek
+//	   	   zbyshek@mail333.com
+//
+// ver2.1
+//
+// Description:
+// This script creates GUI for Alfred-а.
+//
+// Note:
+// It requires library functions az_lib_findFileName, az_lib_stringArrayGetIndexByItem, 
+// and skipFrame.mll plug-in
+// 
+// Use `az_alfredForMaya_setBatchFile` function for automaic batch-файла setup in userSetup.mel (recommended for studios)
+// example: az_alfredForMaya_setBatchFile("//Server/cmd/mayaRender_v70.cmd")
+//
+// ver2.1
+// 		23.12.05 - Added skip frame feature.
+//			   Fixed bug in procedure az_alfredForMayaGUI_updateRenderLayers. Now when using
+//		           references, master layer of reference isn't visible in list of accesible render layers.
+//      
+//		23.02.06 - Little bug in GUI fixed.
+//			 - Automatic window height detection added.
+//
+// ver2.2
+//		10.07.06 - Added function for setting up batch-file `az_alfredForMaya_setBatchFile` (see earlier)
+//		
+////////////////////////////////////////////////////////////////////////////////
+
+global string $az_mayaBatch_cmd;
+
+//##########################################################################
+// 				Procedures and Functions for feature "skip frame"
+//##########################################################################
+
+global proc int az_alfredForMayaSkipFrame_multiframeFormat()
+//########################################################################################################
+// Функция. Возвращает true если multi frame, false если нет
+//########################################################################################################
+{
+	int $imageNum = `getAttr "defaultRenderGlobals.imageFormat"`;
+	string $format = "";
+	switch ($imageNum){
+		case 22: $format = "qt"; break;
+		case 23: $format = "avi"; break;
+		case 60: $format = "swf"; break;
+		case 62: $format = "svg"; break;
+		case 63: $format = "swft"; break;
+	}
+	int $isMultiframe = 0;
+	if ($format == "qt" || $format == "avi" || $format == "mv" ||
+	$format == "swf" || $format == "svg" || $format == "swft") $isMultiframe = 1;
+	return $isMultiframe;
+}
+
+proc string az_alfredForMayaSkipFrame_templateRenderImageFileName ()
+//########################################################################################################
+// Функция. Возвращает шаблон image filename из RenderSettings
+//########################################################################################################
+{	
+	//########################################################################################################
+	// Рендерится анимация [true] или только текущий кадр [false]
+	//########################################################################################################
+	
+	//########################################################################################################
+	//Управляет типом формата имени файла, который используется для файлов
+	//изображения: используйте default расширение (0) [Ex: name.tif], 
+	//расширения нет (1)[Ex: name.#],пользовательский формат файла изображения(2) [Ex: name.aaa]
+	//########################################################################################################
+	int $outFormatControl = `getAttr "defaultRenderGlobals.outFormatControl"`;
+	//########################################################################################################
+	// periodInExt - управляет характером между именем файла и расширением файла:
+	// Файл состоит из имени [name], padding-га [#] и расширения [ext].
+	// Режимы: нет характера(символа точки) (0 [name#.ext]),
+	// период(точка) (1)[name.ext, name.#.ext, name.ext.#, name.#], или подчеркивание (2) [name_#.ext].
+	//########################################################################################################
+	int $periodInExt = `getAttr "defaultRenderGlobals.periodInExt"`;
+	//########################################################################################################
+	// Должен ли Frame Padding предшествовать расширению в названии файла?
+	// [Ex: name.#.ext -> true, name.ext.# -> false]
+	//########################################################################################################
+	int $putFrameBeforeExt = `getAttr "defaultRenderGlobals.putFrameBeforeExt"`;
+	
+	int $extensionPadding = `getAttr "defaultRenderGlobals.extensionPadding"`; // от 1 до 8
+	string $images[] = `renderSettings -fin`;
+	string $extension = `match "[^.]*$" $images[0]`;
+
+	string $digits = "#";
+	string $imageFilePrefix = `substitute "\.[0-9]*\.[^\.]*$" $images[0] ""`;
+
+	if ( $extensionPadding < 2||$extensionPadding > 8) $digits = "#"; 
+	else for ($i = 2; $i <= $extensionPadding; $i++) $digits += "#";
+			
+	if ($outFormatControl) return ($imageFilePrefix+"."+$digits);
+	if (!$periodInExt) return ($imageFilePrefix+$digits+"."+$extension);
+	if ($periodInExt == 2) return ($imageFilePrefix+"_"+$digits+"."+$extension);
+	if ($putFrameBeforeExt) return ($imageFilePrefix+"."+$digits+"."+$extension);
+	if (!$putFrameBeforeExt) return ($imageFilePrefix+"."+$extension+"."+$digits);
+}
+
+global proc string[] az_alfredForMayaSkipFrame (string $path, string $templateImageName, float $startFrame, float $endFrame, float $byFrame)
+{
+//##############################################################################################################
+// Функция. Возвращает массив пропущенных кадров в формате [<startFrame>, <endFrame>, <byFrame>,...]
+//##############################################################################################################
+	if ( !`pluginInfo -q -loaded "skipFrame"`) {
+		int $valid;
+		$valid = catch (`loadPlugin "skipFrame"`);
+		if ($valid) error ("Plug-in, \"skipFrame.mll\", was not found on MAYA_PLUG_IN_PATH.");
+	}
+	string $listRes[] = `skipFrame -p $path -t $templateImageName -s $startFrame -e $endFrame -b $byFrame -m 1`;
+	return $listRes;
+}
+
+//##########################################################################
+// 				Procedures and Functions for data gathering
+//##########################################################################
+
+proc string az_alfredForMaya_validTmpDir ()
+//##########################################################################
+// Функция. Проверяет существует ли темповая директория, если нет, то
+// создается директория tmp на диске С.
+//##########################################################################
+{
+	string $tmpDir = `internalVar -userTmpDir`;
+	int $valid = `filetest -d $tmpDir`;
+	if (!$valid) {
+		sysFile -makeDir "C:/tmp/";
+		return "C:/tmp/";
+	}
+	return $tmpDir;
+}
+
+proc string az_alfredForMaya_validViewCommand()
+//##########################################################################
+// Функция. Eсли ViewCommand включен возвращает команду
+//##########################################################################
+{
+	int $valid = `checkBoxGrp -q -value1 "az_alfredForMayaFrameOverrideViewCommandEnableCheckBoxGrp"`;
+	string $res;
+	
+	if ($valid) {
+		$res = `textFieldButtonGrp -q -text "az_alfredForMayaFrameOverrideViewCommandTextFieldButtonGrp"`;
+	}
+	return $res;
+}
+
+proc float[] az_alfredForMaya_validOverrideSequenceLength ()
+//##########################################################################
+// Функция. Если Override Sequence Length включен возвращает start frame, 
+// end frame, by frame.
+//##########################################################################
+{
+	int $valid = `checkBoxGrp -q -value1 "az_alfredForMayaFrameOverrideSequenceLengthEnableCheckBoxGrp"`;
+	float $res[];
+	
+	if ($valid){
+		$res[0] = `floatField -q -value "az_alfredForMayaStartFrameFloatField"`;
+		$res[1] = `floatField -q -value "az_alfredForMayaEndFrameFloatField"`;
+		$res[2] = `floatField -q -value "az_alfredForMayaByFrameFloatField"`;
+	}
+	return $res;
+}
+
+proc string az_alfredForMaya_validOverrideRenderPath()
+//##########################################################################
+// Функция. Если Override Render Path включен и не пуст, возвращает путь к
+// фолдеру, с указанным рендер флагом и включенными фигурными скобками.
+//##########################################################################
+{
+	int $valid = `checkBoxGrp -q -value1 "az_alfredForMayaFrameOverrideRenderPathEnableCheckBoxGrp"`;
+	string $res;
+	
+	if ($valid){
+		$res = `textFieldButtonGrp -q -fileName "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp"`;
+		if (size ($res) > 0) $res = " -rd {"+$res+"} ";
+	}
+	return $res;
+}
+
+proc string az_alfredForMaya_validImageFilename()
+//##########################################################################
+// Функция. Если Override Image Filename включен и не пуст, возвращает 
+// имя , с указанным рендер флагом и включенными фигурными скобками.
+//##########################################################################
+{
+	int $valid = `checkBoxGrp -q -value1 "az_alfredForMayaFrameOverrideImageFilenameEnableCheckBoxGrp"`;
+	string $res;
+	
+	if ($valid){
+		$res = `textFieldGrp -q -fileName "az_alfredForMayaFrameOverrideImageFilenameEnableTextFieldGrp"`;
+		if (size ($res) > 0) $res = " -im {"+$res+"}";
+	}
+	return $res;
+}
+	
+proc string[] az_alfredForMaya_gatheringRenderLayers ()
+//##########################################################################
+// Функция. Возвращает те имена Render Layers, которые должны быть отправлены
+// на рендер. Формат возвращаемого массива: 
+// $res = {nameRenderLayer1,on/off skipFrame,start frame,end frame,by frame,
+// nameRenderLayer2,on/off skipFrame,start frame,end frame,by frame...}
+//##########################################################################
+{
+	global string $az_alfredForMayaGUI_listRenderLayers[];
+	string $res[];
+	string $allConection[];
+	int $indexStartFrame;
+	int $indexEndFrame;
+	int $indexByFrame;
+	int $countLayers = 0;
+	int $countSkipFrame = 1;
+	int $countStartFrame = 2;
+	int $countEndFrame = 3;
+	int $countByFrame = 4;
+	int $validLayer;
+	int $validSkipFrame;
+	int $validOverrideSequenceLength;
+	int $validStartFrame = false;
+	int $validEndFrame = false;
+	int $validByFrame = false;
+	float $overrideSequenceLength[] = az_alfredForMaya_validOverrideSequenceLength();
+	float $startFrame;
+	float $endFrame;
+	float $byFrame;
+	float $defaultStartFrame;
+	float $defaultEndFrame;
+	float $defaultByFrame;
+	
+	string $currentRenderLayer = `editRenderLayerGlobals -q -currentRenderLayer`;
+	string $bufferCurrentRenderLayer;
+		
+	if (size($overrideSequenceLength) > 0) $validOverrideSequenceLength = true;
+	for ($layer in $az_alfredForMayaGUI_listRenderLayers) {
+		$validLayer = `checkBoxGrp -q -value1 $layer`;
+		if ($validLayer) {
+			$res[$countLayers] = `checkBoxGrp -q -label1 $layer`; // Имя рендер лэйера
+			$validSkipFrame = `checkBoxGrp -q -value2 $layer`;
+			if ($validSkipFrame) $res[$countSkipFrame] = "on";
+			else $res[$countSkipFrame] = "off";
+			if ($validOverrideSequenceLength) {
+				$res[$countStartFrame] = $overrideSequenceLength[0];
+				$res[$countEndFrame] = $overrideSequenceLength[1];
+				$res[$countByFrame] = $overrideSequenceLength[2];
+			}
+			else {
+				$allConection = `listConnections -connections false -plugs true ($res[$countLayers]+".adjustments")`;
+				$indexStartFrame = az_lib_stringArrayGetIndexByItem("defaultRenderGlobals.startFrame", $allConection);
+				$indexEndFrame = az_lib_stringArrayGetIndexByItem("defaultRenderGlobals.endFrame", $allConection);
+				$indexByFrame = az_lib_stringArrayGetIndexByItem("defaultRenderGlobals.byFrameStep", $allConection);
+				//####################################
+				// Для Start Frame
+				//####################################
+				// Если атрибут оверрайден
+				if ($indexStartFrame != -1) {
+					$bufferCurrentRenderLayer = `editRenderLayerGlobals -q -currentRenderLayer`;
+					if ($res[$countLayers] == $bufferCurrentRenderLayer) $startFrame = `getAttr "defaultRenderGlobals.startFrame"`;
+					else {
+						editRenderLayerGlobals -currentRenderLayer $res[$countLayers];
+						$startFrame = `getAttr "defaultRenderGlobals.startFrame"`;
+					}
+				}
+				// Если атрибут не оверрайден
+				else {
+					if ($validStartFrame) $startFrame = $defaultStartFrame;
+					else {
+						$bufferCurrentRenderLayer = `editRenderLayerGlobals -q -currentRenderLayer`;
+						if ($res[$countLayers] == $bufferCurrentRenderLayer) $defaultStartFrame = `getAttr "defaultRenderGlobals.startFrame"`;
+						else {
+							editRenderLayerGlobals -currentRenderLayer $res[$countLayers];
+							$defaultStartFrame = `getAttr "defaultRenderGlobals.startFrame"`;
+						}
+						$startFrame = $defaultStartFrame;
+						$validStartFrame = true;
+					}
+				}
+				//####################################
+				// Для End Frame
+				//####################################
+				// Если атрибут оверрайден
+				if ($indexEndFrame != -1) {
+					$bufferCurrentRenderLayer = `editRenderLayerGlobals -q -currentRenderLayer`;
+					if ($res[$countLayers] == $bufferCurrentRenderLayer) $endFrame = `getAttr "defaultRenderGlobals.endFrame"`;
+					else {
+						editRenderLayerGlobals -currentRenderLayer $res[$countLayers];
+						$endFrame = `getAttr "defaultRenderGlobals.endFrame"`;
+					}
+				}
+				// Если атрибут не оверрайден
+				else {
+					if ($validEndFrame) $endFrame = $defaultEndFrame;
+					else {
+						$bufferCurrentRenderLayer = `editRenderLayerGlobals -q -currentRenderLayer`;
+						if ($res[$countLayers] == $bufferCurrentRenderLayer) $defaultEndFrame = `getAttr "defaultRenderGlobals.endFrame"`;
+						else {
+							editRenderLayerGlobals -currentRenderLayer $res[$countLayers];
+							$defaultEndFrame = `getAttr "defaultRenderGlobals.endFrame"`;
+						}
+						$endFrame = $defaultEndFrame;
+						$validEndFrame = true;
+					}
+				}
+				//####################################
+				// Для By Frame
+				//####################################
+				// Если атрибут оверрайден
+				if ($indexByFrame != -1) {
+					$bufferCurrentRenderLayer = `editRenderLayerGlobals -q -currentRenderLayer`;
+					if ($res[$countLayers] == $bufferCurrentRenderLayer) $byFrame = `getAttr "defaultRenderGlobals.byFrameStep"`;
+					else {
+						editRenderLayerGlobals -currentRenderLayer $res[$countLayers];
+						$byFrame = `getAttr "defaultRenderGlobals.byFrameStep"`;
+					}
+				}
+				// Если атрибут не оверрайден
+				else {
+					if ($validByFrame) $byFrame = $defaultByFrame;
+					else {
+						$bufferCurrentRenderLayer = `editRenderLayerGlobals -q -currentRenderLayer`;
+						if ($res[$countLayers] == $bufferCurrentRenderLayer) $defaultByFrame = `getAttr "defaultRenderGlobals.byFrameStep"`;
+						else {
+							editRenderLayerGlobals -currentRenderLayer $res[$countLayers];
+							$defaultByFrame = `getAttr "defaultRenderGlobals.byFrameStep"`;
+						}
+						$byFrame = $defaultByFrame;
+						$validByFrame = true;
+					}
+				}
+				$res[$countStartFrame] = $startFrame;
+				$res[$countEndFrame] = $endFrame;
+				$res[$countByFrame] = $byFrame;
+			}
+			$countLayers+=5;
+			$countSkipFrame+=5;
+			$countStartFrame+=5;
+			$countEndFrame+=5;
+			$countByFrame+=5;
+		}
+	}
+	editRenderLayerGlobals -currentRenderLayer $currentRenderLayer;
+	return $res;
+}
+
+//##########################################################################
+// 							Alfred Script Generator
+//##########################################################################
+
+proc string az_alfredForMaya_scriptGen()
+//##########################################################################
+// Функция. Создает worklist для Альфреда.
+// Возвращаемое значение путь к worklist-у.
+//##########################################################################
+{
+	global string $az_alfredForMayaGUI_listRenderLayers[];
+	string $tempDirPath = az_alfredForMaya_validTmpDir();
+	string $customRenderPath = az_alfredForMaya_validOverrideRenderPath();
+	string $customImageFilename = az_alfredForMaya_validImageFilename();
+	string $mayabatch = `textFieldButtonGrp -q -fileName "az_alfredForMayaCommonOptionsPathToMayaBatchTextFieldButtonGrp"`;
+	string $serviceKey = `textFieldButtonGrp -q -text "az_alfredForMayaFrameOverrideServiceSelectionKeyTextFieldButtonGrp"`;
+	string $viewCommand = `textFieldButtonGrp -q -text "az_alfredForMayaFrameOverrideViewCommandTextFieldButtonGrp"`;
+	string $listDataGathering[] = az_alfredForMaya_gatheringRenderLayers();
+	string $curFullSceneName = `file -q -sceneName`; // Имя текущей сцены
+	string $currentProj = `workspace -q -fullName`; // Текущий проект
+	string $imagesPath = "/" + `workspace -q -fileRuleEntry "images"` + "/"; // Папка рендера
+	string $jobTitle = az_lib_findFileName($curFullSceneName,2);
+	string $alfredWorklistFullFileName = $tempDirPath+$jobTitle+".alf";
+	string $layerName;
+	string $skipFrame;
+	string $explorer;
+	int $validViewCommand = `checkBoxGrp -q -value1 "az_alfredForMayaFrameOverrideViewCommandEnableCheckBoxGrp"`;
+	int $cleanup = `checkBoxGrp -q -value1 "az_alfredForMayaCommonOptionsEnableCleanupCheckBoxGrp"`;
+	int $fps = `intSliderGrp -q -value "az_alfredForMayaFramePerServerIntSliderGrp"`;
+	int $fileId=`fopen $alfredWorklistFullFileName "w"`;
+	int $indexLayer;
+	int $indexSkipFrame;
+	int $indexStartFrame;
+	int $indexEndFrame;
+	int $indexByFrame;
+	float $i;
+	float $startFrame;
+	float $endFrame;
+	float $byFrame;
+	float $start;
+	float $end;
+	
+	fprint $fileId ("##AlfredToDo 3.0\r\n\r\n");
+	fprint $fileId ("Job -title {"+$jobTitle+"} -subtasks {\r\n");
+	
+	for ($indexLayer = 0; $indexLayer < size($listDataGathering); $indexLayer+=5) {
+		$indexSkipFrame = $indexLayer+1;
+		$indexStartFrame = $indexLayer+2;
+		$indexEndFrame = $indexLayer+3;
+		$indexByFrame = $indexLayer+4;
+		
+		$layerName = $listDataGathering[$indexLayer];
+		$skipFrame = $listDataGathering[$indexSkipFrame];
+		$startFrame = $listDataGathering[$indexStartFrame];
+		$endFrame = $listDataGathering[$indexEndFrame];
+		$byFrame = $listDataGathering[$indexByFrame];
+		
+		//#############################################################################################################################################
+		// Обработка skip frame
+		//#############################################################################################################################################
+		switch ($skipFrame) {
+			//######################################
+			// skip frame включен
+			//######################################
+			case "on":
+				string $templateImageName = az_alfredForMayaSkipFrame_templateRenderImageFileName();
+				string $path;
+				int $count;
+				
+				// Ситуация когда пользователь не создал рендер лэйерсы
+				if ( size ($az_alfredForMayaGUI_listRenderLayers) == 1 && $layerName == "defaultRenderLayer") {
+					if (size($customRenderPath) == 0) $path = $currentProj+$imagesPath;
+					else $path = `textFieldButtonGrp -q -fileName "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp"`+"/";
+				}
+				else {
+					string $layer_ = $layerName;
+					if ($layerName == "defaultRenderLayer") $layer_ = "masterLayer";
+					if (size($customRenderPath) == 0) $path = $currentProj+$imagesPath+$layer_;
+					else $path = `textFieldButtonGrp -q -fileName "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp"`+"/"+$layer_;
+				}
+
+				string $listFrames[] = az_alfredForMayaSkipFrame ($path, $templateImageName, $startFrame, $endFrame, $byFrame);
+
+				print "// List of non-existent frames: \n";
+
+				for ($count = 0; $count < size ($listFrames); $count+=3) {
+
+					$startFrame = $listFrames[$count];
+					$endFrame = $listFrames[($count + 1)];
+					$byFrame = $listFrames[($count + 2)];
+					
+					print ("// " + $startFrame + " - " + $endFrame + " by " + $byFrame + "\n");
+					
+					$start = $startFrame;
+					$end = 0;
+					
+					fprint $fileId ("\r\n\tTask -title {"+$layerName+"} -subtasks {");
+					$i = $endFrame - 1;
+					while ($i <= $endFrame) {
+						$end = ($fps-1)*$byFrame+$start;
+						if ($end >= $endFrame) $end = $endFrame;
+									
+						fprint $fileId ("\r\n\r\n\t\tTask -title { Frames "+$start+" to "+$end+" by "+$byFrame+" } -cmds {");
+						fprint $fileId ("\r\n\t\t\tRemoteCmd { {"+$mayabatch+"} -r file -rl {"+$layerName+"} -s "+$start+" -e "+$end+" -b "+$byFrame+$customRenderPath+$customImageFilename+" -proj {"+$currentProj+"} "+"{"+$curFullSceneName+"}"+" } -service {"+$serviceKey+"}");
+						fprint $fileId ("\r\n\t\t}");
+						if ($validViewCommand)	{
+							//#########################################
+							// Обработка View Command
+							//#########################################
+							switch ($viewCommand) {
+								case "explorer":
+									// Ситуация когда пользователь не создал рендер лэйерсы
+									if ( size ($az_alfredForMayaGUI_listRenderLayers) == 1 && $layerName == "defaultRenderLayer") {
+										if (size($customRenderPath) == 0) $explorer = $currentProj+$imagesPath;
+										else $explorer = `textFieldButtonGrp -q -fileName "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp"`+"/";
+										fprint $fileId (" -preview {");
+										$explorer = `substitute $explorer "s/(\/)/\\\\\\\\/g"`;
+										fprint $fileId ("\r\n\t\t\t"+$viewCommand+" \""+$explorer+"\"");
+										fprint $fileId ("\r\n\t\t}");
+									}
+									else {
+										string $layer = $layerName;
+										if ($layerName == "defaultRenderLayer") $layer = "masterLayer";
+										if (size($customRenderPath) == 0) $explorer = $currentProj+$imagesPath+$layer;
+										else $explorer = `textFieldButtonGrp -q -fileName "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp"`+"/"+$layer;
+										fprint $fileId (" -preview {");
+										$explorer = `substitute $explorer "s/(\/)/\\\\\\\\/g"`;
+										fprint $fileId ("\r\n\t\t\t"+$viewCommand+" \""+$explorer+"\"");
+										fprint $fileId ("\r\n\t\t}");
+									}
+									break;
+								default:
+									catch(warning("The command is not specified."));
+									break;
+								
+							}
+						}
+						$start = $end +$byFrame;
+						$i=$start;
+					}
+					fprint $fileId ("\r\n\t}");
+				}
+				break;
+			//######################################
+			// skip frame выключен
+			//######################################
+			default:
+				$start = $startFrame;
+				$end = 0;
+				
+				fprint $fileId ("\r\n\tTask -title {"+$layerName+"} -subtasks {");
+				$i = $endFrame - 1;
+				while ($i <= $endFrame) {
+					$end = ($fps-1)*$byFrame+$start;
+					if ($end >= $endFrame) $end = $endFrame;
+								
+					fprint $fileId ("\r\n\r\n\t\tTask -title { Frames "+$start+" to "+$end+" by "+$byFrame+" } -cmds {");
+					fprint $fileId ("\r\n\t\t\tRemoteCmd { {"+$mayabatch+"} -r file -rl {"+$layerName+"} -s "+$start+" -e "+$end+" -b "+$byFrame+$customRenderPath+$customImageFilename+" -proj {"+$currentProj+"} "+"{"+$curFullSceneName+"}"+" } -service {"+$serviceKey+"}");
+					fprint $fileId ("\r\n\t\t}");
+					if ($validViewCommand)	{
+						//#########################################
+						// Обработка View Command
+						//#########################################
+						switch ($viewCommand) {
+							case "explorer":
+								// Ситуация когда пользователь не создал рендер лэйерсы
+								if ( size ($az_alfredForMayaGUI_listRenderLayers) == 1 && $layerName == "defaultRenderLayer") {
+									if (size($customRenderPath) == 0) $explorer = $currentProj+$imagesPath;
+									else $explorer = `textFieldButtonGrp -q -fileName "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp"`+"/";
+									fprint $fileId (" -preview {");
+									$explorer = `substitute $explorer "s/(\/)/\\\\\\\\/g"`;
+									fprint $fileId ("\r\n\t\t\t"+$viewCommand+" \""+$explorer+"\"");
+									fprint $fileId ("\r\n\t\t}");
+								}
+								else {
+									string $layer = $layerName;
+									if ($layerName == "defaultRenderLayer") $layer = "masterLayer";
+									if (size($customRenderPath) == 0) $explorer = $currentProj+$imagesPath+$layer;
+									else $explorer = `textFieldButtonGrp -q -fileName "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp"`+"/"+$layer;
+									fprint $fileId (" -preview {");
+									$explorer = `substitute $explorer "s/(\/)/\\\\\\\\/g"`;
+									fprint $fileId ("\r\n\t\t\t"+$viewCommand+" \""+$explorer+"\"");
+									fprint $fileId ("\r\n\t\t}");
+								}
+								break;
+							default:
+								catch(warning("The command is not specified."));
+								break;
+							
+						}
+					}
+					$start = $end +$byFrame;
+					$i=$start;
+				}
+				fprint $fileId ("\r\n\t}");
+				break;
+		}
+	}
+	fprint $fileId ("\r\n}");
+	if ($cleanup) fprint $fileId (" -cleanup {Cmd {Alfred} -msg {File delete \""+$alfredWorklistFullFileName+"\"}}");	
+
+	fprint $fileId ("\r\n\r\n## ------- end included lines");
+	fclose $fileId;
+	return $alfredWorklistFullFileName;
+}
+
+
+//##########################################################################
+// 					 GUI Procedures and Functions
+//##########################################################################
+
+global proc az_alfredForMayaGUI_updateRenderLayers()
+//##########################################################################
+// Процедура. Заполняет фрэйм RenderLayers элементами checkBox соответствующих
+// названию layer-ов и элементами checkBox для реализации "Skip Frames".
+//##########################################################################
+{	
+	global string $az_alfredForMayaGUI_listRenderLayers[];
+//	string $listRenderLayers[] = `ls -type "renderLayer"`;
+	string $listRenderLayers[] = `listConnections renderLayerManager.renderLayerId`; // update ver 2.1
+	int $validRenderable;
+	
+	int $skipFrameEnabled = 1;
+	int $animation = `getAttr "defaultRenderGlobals.animation"`;
+	if (!$animation||`az_alfredForMayaSkipFrame_multiframeFormat`)
+	$skipFrameEnabled = 0;
+		
+	setParent az_alfredForMayaRenderLayersColumnLayout;
+	separator -height 5 -width 2000 -style "in";;
+	for ($i = 0; $i < size ($listRenderLayers); $i++){
+		$validRenderable = `getAttr ($listRenderLayers[$i]+".renderable")`;
+ 		setParent az_alfredForMayaRenderLayersColumnLayout;
+		$az_alfredForMayaGUI_listRenderLayers[$i] = `checkBoxGrp
+												 	-numberOfCheckBoxes 2
+													-adjustableColumn2 1 
+													-columnAlign 1 "left"
+													-columnWidth3 29 300 300
+												 	-label ""
+													-label1 $listRenderLayers[$i]
+													-value1 $validRenderable
+													-enable2 ($validRenderable*$skipFrameEnabled)
+													-cc "az_alfredForMayaGUI_updateSkipFrames"
+													-label2 "Skip Frames"`;
+		separator -height 5 -width 2000 -style "in";;
+		
+	}
+}
+
+global proc az_alfredForMayaGUI_updateSkipFrames()
+//##########################################################################
+// Процедура. Реализует hide-unhide элементов GUI.
+//##########################################################################
+{
+	global string $az_alfredForMayaGUI_listRenderLayers[];
+	int $valid;
+		
+	for ($layer in $az_alfredForMayaGUI_listRenderLayers) {
+		$valid = `checkBoxGrp -q -value1 $layer`;
+		if ($valid)	checkBoxGrp -e -enable2 true $layer;
+		else checkBoxGrp -e -enable2 false $layer;
+	}
+}
+
+global proc az_alfredForMayaGUI_BtnSelectAll()
+//##########################################################################
+// Процедура. Реализует режим on элементов GUI.
+//##########################################################################
+{
+	global string $az_alfredForMayaGUI_listRenderLayers[];
+	
+	for ($i = 0; $i < size ($az_alfredForMayaGUI_listRenderLayers); $i++) {
+		checkBoxGrp -e -value1 true $az_alfredForMayaGUI_listRenderLayers[$i];
+	}
+	az_alfredForMayaGUI_updateSkipFrames();
+}
+
+global proc az_alfredForMayaGUI_BtnSelectNone()
+//##########################################################################
+// Процедура. Реализует режим on элементов GUI.
+//##########################################################################
+{
+	global string $az_alfredForMayaGUI_listRenderLayers[];
+	
+	for ($i = 0; $i < size ($az_alfredForMayaGUI_listRenderLayers); $i++) {
+		checkBoxGrp -e -value1 false $az_alfredForMayaGUI_listRenderLayers[$i];
+	}
+	az_alfredForMayaGUI_updateSkipFrames();
+}
+
+global proc az_alfredForMayaGUI_BtnSelectAllSkip()
+//##########################################################################
+// Процедура. Реализует режим on элементов GUI.
+//##########################################################################
+{
+	global string $az_alfredForMayaGUI_listRenderLayers[];
+	
+	for ($i = 0; $i < size ($az_alfredForMayaGUI_listRenderLayers); $i++) {
+		checkBoxGrp -e -value2 true $az_alfredForMayaGUI_listRenderLayers[$i];
+	}
+}
+
+global proc az_alfredForMayaGUI_BtnSelectNoneSkip()
+//##########################################################################
+// Процедура. Реализует режим on элементов GUI.
+//##########################################################################
+{
+	global string $az_alfredForMayaGUI_listRenderLayers[];
+	
+	for ($i = 0; $i < size ($az_alfredForMayaGUI_listRenderLayers); $i++) {
+		checkBoxGrp -e -value2 false $az_alfredForMayaGUI_listRenderLayers[$i];
+	}
+}
+
+global proc az_alfredForMayaGUI_updateOverrideSequenceLength()
+//##########################################################################
+// Процедура. Реализует hide-unhide элементов GUI.
+//##########################################################################
+{
+	int $valid = `checkBoxGrp -q -value1 "az_alfredForMayaFrameOverrideSequenceLengthEnableCheckBoxGrp"`;
+	
+	if ($valid){
+		floatField -e -enable true "az_alfredForMayaStartFrameFloatField";
+		floatField -e -enable true "az_alfredForMayaEndFrameFloatField";
+		floatField -e -enable true "az_alfredForMayaByFrameFloatField";
+	}
+	else {
+		floatField -e -enable false "az_alfredForMayaStartFrameFloatField";
+		floatField -e -enable false "az_alfredForMayaEndFrameFloatField";
+		floatField -e -enable false "az_alfredForMayaByFrameFloatField";
+	}
+	
+}
+
+global proc az_alfredForMayaGUI_updateOverrideRenderPath()
+//##########################################################################
+// Процедура. Реализует hide-unhide элементов GUI.
+//##########################################################################
+{
+	int $valid = `checkBoxGrp -q -value1 "az_alfredForMayaFrameOverrideRenderPathEnableCheckBoxGrp"`;
+	
+	if ($valid){
+		textFieldButtonGrp -e -enable true "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp";
+	}
+	else {
+		textFieldButtonGrp -e -enable false "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp";
+	}
+	
+}
+
+global proc az_alfredForMayaGUI_updateOverrideImageFilename()
+//##########################################################################
+// Процедура. Реализует hide-unhide элементов GUI.
+//##########################################################################
+{
+	int $valid = `checkBoxGrp -q -value1 "az_alfredForMayaFrameOverrideImageFilenameEnableCheckBoxGrp"`;
+	
+	if ($valid){
+		textFieldGrp -e -enable true "az_alfredForMayaFrameOverrideImageFilenameEnableTextFieldGrp";
+	}
+	else {
+		textFieldGrp -e -enable false "az_alfredForMayaFrameOverrideImageFilenameEnableTextFieldGrp";
+	}
+	
+}
+
+global proc az_alfredForMayaGUI_updateViewCommand()
+//##########################################################################
+// Процедура. Реализует hide-unhide элементов GUI.
+//##########################################################################
+{
+	int $valid = `checkBoxGrp -q -value1 "az_alfredForMayaFrameOverrideViewCommandEnableCheckBoxGrp"`;
+	if ($valid){
+		textFieldGrp -e -enable true "az_alfredForMayaFrameOverrideViewCommandTextFieldButtonGrp";
+	}
+	else {
+		textFieldGrp -e -enable false "az_alfredForMayaFrameOverrideViewCommandTextFieldButtonGrp";
+	}
+	
+}
+ 
+global proc az_alfredForMayaGUI_OverrideRenderPath (string $dir, string $fileType)
+//##########################################################################
+// Процедура. Реализует выбор output директории для рендера 
+//##########################################################################
+{
+	textFieldButtonGrp -e -fileName $dir "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp";
+}
+
+global proc az_alfredForMayaGUI_BrowseMayaBatchFile (string $file, string $fileType)
+//##########################################################################
+// Процедура. Реализует выбор mayabatch файла для рендера
+//##########################################################################
+{
+	textFieldButtonGrp -e -fileName $file "az_alfredForMayaCommonOptionsPathToMayaBatchTextFieldButtonGrp";
+}
+
+global proc az_alfredForMayaGUI_SaveMayaBatchFile()
+//##########################################################################
+// Процедура. Реализует сохранение пути для mayabatch.bat файла
+//##########################################################################
+{
+	if ("az_mayaBatch" != "")
+		optionVar -sv "az_mayaBatch" `textFieldButtonGrp -q -fileName "az_alfredForMayaCommonOptionsPathToMayaBatchTextFieldButtonGrp"`;
+}
+
+global proc az_alfredForMayaGUI_SaveViewCommand()
+//##########################################################################
+// Процедура. Реализует сохранение команды ViewCommand
+//##########################################################################
+{
+	optionVar -sv "az_viewCommand" `textFieldButtonGrp -q -text "az_alfredForMayaFrameOverrideViewCommandTextFieldButtonGrp"`;
+}
+
+global proc az_alfredForMayaGUI_SaveServiceSelectionKey()
+//##########################################################################
+// Процедура. Реализует сохранение ServiceSelectionKey
+//##########################################################################
+{
+	optionVar -sv "az_serviceKey" `textFieldButtonGrp -q -text "az_alfredForMayaFrameOverrideServiceSelectionKeyTextFieldButtonGrp"`;
+}
+
+global proc az_alfredForMayaGUI_SaveNumberFramesPerServer()
+//##########################################################################
+// Процедура. Реализует сохранение NumberFramesPerServer
+//##########################################################################
+{
+	optionVar -iv "az_numberFramesPerServer" `intSliderGrp -q -v "az_alfredForMayaFramePerServerIntSliderGrp"`;
+}
+
+global proc int az_alfredForMayaGUI_ValidToSave()
+//##########################################################################
+// Рекурсивная функция проверки сохранения сцены перед отправкой на рендер
+//##########################################################################
+{
+	string $curSceneName = `file -q -sceneName`;
+	// Ситуация когда имя файла сцены несуществует
+	if (size($curSceneName) == 0) {
+		catch(warning("Please save or browse the scene!"));
+		fileBrowserDialog -m 1 -fileType "mayaBinary" -fc "az_alfredForMayaGUI_SaveAs" -an "Save Scene As..." -operationMode "SaveAs";
+		$curSceneName = `file -q -sceneName`;
+		// Рекурсия
+		az_alfredForMayaGUI_ValidToSave;
+		return 1;
+	}
+	else {
+		// Если были изменения в текущей сцене
+		if ((`file -q -amf`) || (`file -q -ex` == 0)){
+			string $result = `confirmDialog 
+ 			-title "Save File"
+ 			-message  ("Save changes to "+$curSceneName+" scene?")
+ 			-button "OK" -button "Cancel"
+ 			-defaultButton "OK" -cancelButton "Cancel"
+ 			-dismissString "Cancel"`;
+			if ($result == "OK") {
+ 				string $cmd = "file -save";
+				evalEcho($cmd);
+				return 1;
+	 		}
+			catch(warning("The scene will be sent render without the current changes!"));
+			return 1;
+		}
+		print "\nNo changes to save.\n";
+		return 1;
+	}
+	return 0;
+}
+
+global proc az_alfredForMayaGUI_SaveAs( string $filename, string $fileType )
+//##########################################################################
+// Вспомогательная процедура для функции az_validToSave
+//##########################################################################
+{
+ 	file -rename $filename;
+	file -save;
+}
+
+global proc int az_alfredForMayaGUI_SendRenderJob (int $mode)
+//##########################################################################
+// Функция. Реализует запуск альфреда с соответствующим worklist-ом
+// Режимы: $mode == 0 - запуск с удалением окна az_alfredForMayaWin
+// 		   $mode == 1 - запуск с сохранением окна az_alfredForMayaWin
+//##########################################################################
+{	
+	int $validSendPause = `checkBoxGrp -q -value1 "az_alfredForMayaCommonOptionsSendPausedJobCheckBoxGrp"`;
+	int $valid = az_alfredForMayaGUI_ValidToSave();
+	if ($valid){
+		switch ($mode){
+			case 0:
+				if (!$validSendPause) {
+					string $scriptName = az_alfredForMaya_scriptGen();
+					if ($scriptName == "") return 0;
+					system("start alfred.exe "+$scriptName);
+					deleteUI az_alfredForMayaWin;
+					return 1;
+				}
+				else {
+					string $scriptName = az_alfredForMaya_scriptGen();
+					if ($scriptName == "") return 0;
+					system("start alfcmdline.exe -paused "+$scriptName);
+					deleteUI az_alfredForMayaWin;
+					return 1;
+				}
+			case 1:
+				if (!$validSendPause) {
+					string $scriptName = az_alfredForMaya_scriptGen();
+					if ($scriptName == "") return 0;
+					system("start alfred.exe "+$scriptName);
+					return 1;
+				}
+				else {
+					string $scriptName = az_alfredForMaya_scriptGen();
+					if ($scriptName == "") return 0;
+					system("start alfcmdline.exe -paused "+$scriptName);
+					return 1;
+				}
+				
+		}
+	}
+	return 0;
+}
+
+
+//##########################################################################
+// 					 				GUI 
+//##########################################################################
+
+global proc az_alfredForMaya_GUI()
+//##########################################################################
+// Процедура создания GUI
+//##########################################################################
+{
+//###################
+// Default values
+//###################
+global string $az_mayaBatch_cmd;
+string $mayabatch;
+if (`optionVar -exists "az_mayaBatch"`)
+	$mayabatch = `optionVar -q "az_mayaBatch"`; // Reset: optionVar -sv "az_mayaBatch" "NOT INSTALL";
+else 
+{
+	if ($az_mayaBatch_cmd == "")
+	{
+		confirmDialog	-title "Warning..."
+						-message (	"Set path to Batch file in Alfred Common Options \n" +
+									"or use `az_alfredForMaya_setBatchFile` procedure. ")
+						-button "Ok"
+						-defaultButton "Ok";
+	}
+	else
+	$mayabatch = $az_mayaBatch_cmd;
+}
+
+string $viewCommand;
+if( (`optionVar -exists "az_viewCommand"`) && (`optionVar -exists "az_viewCommand"` != "explorer") )
+ $viewCommand = `optionVar -q "az_viewCommand"`; // Reset: optionVar -sv "az_viewCommand" "explorer";
+else $viewCommand = "explorer";
+
+string $serviceKey;
+if( (`optionVar -exists "az_serviceKey"`) && (`optionVar -exists "az_serviceKey"` != "maya") )
+ $serviceKey = `optionVar -q "az_serviceKey"`; // Reset: optionVar -sv "az_viewCommand" "maya";
+else $serviceKey = "maya";
+
+int $numberFramesPerServer;
+if (`optionVar -exists "az_numberFramesPerServer"`)
+	$numberFramesPerServer = `optionVar -q "az_numberFramesPerServer"`;
+else $numberFramesPerServer = 10;
+
+global string $az_alfredForMayaGUI_listRenderLayers[];
+int $developing = false;
+int $mainOffset = 30;
+
+int $startFrame = `getAttr defaultRenderGlobals.startFrame`;
+int $endFrame = `getAttr defaultRenderGlobals.endFrame`;
+int $byFrame = `getAttr defaultRenderGlobals.byFrame`;
+
+//###################
+// GUI block
+//###################
+
+if ($developing && `window -exists az_alfredForMayaWin`)
+	deleteUI "az_alfredForMayaWin";
+	
+if (!`window -exists "az_alfredForMayaWin"`) {
+	if ($developing)
+		windowPref -remove "az_alfredForMayaWin";
+
+global string $az_alfredForMayaGUI_listRenderLayers[];
+clear $az_alfredForMayaGUI_listRenderLayers;
+		
+	window -title "Alfred For Maya"
+		-width 500
+		-height 520
+		-topLeftCorner 200 220
+		-sizeable true 
+		"az_alfredForMayaWin";
+		
+		formLayout -numberOfDivisions 100 "az_alfredForMayaMainForm";
+								
+			tabLayout
+			-innerMarginWidth 1
+			-innerMarginHeight 1
+			-scrollable false
+			-childResizable true
+			"az_alfredForMayaTabLayout";
+					
+				scrollLayout
+				-childResizable true
+                -horizontalScrollBarThickness 0
+                -verticalScrollBarThickness 16
+				"az_alfredForMayaColor1";
+				
+					frameLayout
+					-borderVisible false 
+					-borderStyle "in"
+					-labelVisible false
+					-marginWidth 1 
+					-marginHeight 1
+					"az_alfredForMayaRenderOptions";
+					
+						columnLayout -adjustableColumn true "az_alfredForMayaColumn1";
+							frameLayout
+							-collapsable true
+							-borderVisible true 
+							-borderStyle "etchedIn"
+							-label "Render Layers"
+							-labelVisible true
+							-marginWidth 3 
+							-marginHeight 3
+							"az_alfredForMayaRenderLayers";
+						
+								columnLayout -rowSpacing 5 "az_alfredForMayaRenderLayersColumnLayout";
+									az_alfredForMayaGUI_updateRenderLayers();
+									rowColumnLayout
+									-numberOfColumns 6
+									-columnWidth 1 $mainOffset
+									-columnWidth 2 75
+									-columnWidth 3 75
+									-columnWidth 4 78
+									-columnWidth 5 75
+									-columnWidth 6 75;
+										text -label "";
+										button
+										-height 20
+										-label "Select All"
+										-command "az_alfredForMayaGUI_BtnSelectAll"
+										"az_alfredForMayaBtnSelectAll";
+										button
+										-height 20
+										-label "Select None"
+										-command "az_alfredForMayaGUI_BtnSelectNone"
+										"az_alfredForMayaBtnSelectNone";
+										text -label "";
+										button
+										-height 20
+										-label "Select All"
+										-command "az_alfredForMayaGUI_BtnSelectAllSkip"
+										"az_alfredForMayaBtnSelectAllSkip";
+										button
+										-height 20
+										-label "Select None"
+										-command "az_alfredForMayaGUI_BtnSelectNoneSkip"
+										"az_alfredForMayaBtnSelectNoneSkip";
+										
+							setParent az_alfredForMayaWin|az_alfredForMayaMainForm|az_alfredForMayaTabLayout|az_alfredForMayaColor1|az_alfredForMayaRenderOptions|az_alfredForMayaColumn1;
+							frameLayout
+							-collapsable true
+							-collapse false
+							-borderVisible true 
+							-borderStyle "etchedIn"
+							-label "Frame Per Server"
+							-labelVisible true
+							-marginWidth 3 
+							-marginHeight 3
+							"az_alfredForMayaFramePerServer";
+							
+								columnLayout -rowSpacing 5;
+									intSliderGrp 
+									-columnAlign 1 "right"
+									-columnWidth3 ($mainOffset+83) 50 250
+									-label "Number frames"
+									-field true
+	 								-minValue 1 -maxValue 10
+	 								-fieldMinValue 1 -fieldMaxValue 10000
+									-step 1
+	 								-value $numberFramesPerServer
+	 								-cc "az_alfredForMayaGUI_SaveNumberFramesPerServer"
+									"az_alfredForMayaFramePerServerIntSliderGrp";
+												
+							setParent az_alfredForMayaWin|az_alfredForMayaMainForm|az_alfredForMayaTabLayout|az_alfredForMayaColor1|az_alfredForMayaRenderOptions|az_alfredForMayaColumn1;
+							frameLayout
+							-collapsable true
+							-collapse false
+							-borderVisible true 
+							-borderStyle "etchedIn"
+							-label "Override Options"
+							-labelVisible true
+							-marginWidth 3 
+							-marginHeight 3
+							"az_alfredForMayaFrameOverride";
+							
+							columnLayout
+							-adjustableColumn true
+							"az_alfredForMayaFrameOverrideColumn1";
+							
+								frameLayout
+								-collapsable false
+								-collapse false
+								-borderVisible true 
+								-borderStyle "etchedIn"
+								-label "Override Sequence Length"
+								-labelVisible true
+								-labelAlign "top"
+								-marginWidth 3 
+								-marginHeight 3
+								"az_alfredForMayaFrameOverrideSequenceLength";
+								
+									columnLayout -rowSpacing 5;
+										checkBoxGrp
+	 									-numberOfCheckBoxes 1
+										-columnAlign 1 "left"
+										-columnWidth2 ($mainOffset-5) 300 
+	 									-label ""
+										-label1 "Enable"
+										-cc "az_alfredForMayaGUI_updateOverrideSequenceLength"
+										"az_alfredForMayaFrameOverrideSequenceLengthEnableCheckBoxGrp";
+										rowColumnLayout 
+										-numberOfRows 1;
+											text -label "         Start Frame   ";
+											floatField
+											-enable false
+											-value $startFrame
+											-precision 3
+											"az_alfredForMayaStartFrameFloatField";
+											text -label "   End Frame   ";
+											floatField
+											-enable false
+											-value $endFrame
+											-precision 3
+											"az_alfredForMayaEndFrameFloatField";
+											text -label "   By Frame   ";
+											floatField
+											-enable false
+											-minValue 0.001
+											-value $byFrame
+											-precision 3
+											"az_alfredForMayaByFrameFloatField";
+																											
+								setParent az_alfredForMayaWin|az_alfredForMayaMainForm|az_alfredForMayaTabLayout|az_alfredForMayaColor1|az_alfredForMayaRenderOptions|az_alfredForMayaColumn1|az_alfredForMayaFrameOverride|az_alfredForMayaFrameOverrideColumn1;
+								frameLayout
+								-collapsable false
+								-collapse false
+								-borderVisible true 
+								-borderStyle "etchedIn"
+								-label "Override Render Path"
+								-labelVisible true
+								-labelAlign "top"
+								-marginWidth 3 
+								-marginHeight 3
+								"az_alfredForMayaFrameOverrideRenderPath";
+								
+									columnLayout -rowSpacing 5;
+										checkBoxGrp
+	 									-numberOfCheckBoxes 1
+										-columnAlign 1 "left"
+										-columnWidth2 ($mainOffset-5) 300 
+	 									-label ""
+										-label1 "Enable"
+										-cc "az_alfredForMayaGUI_updateOverrideRenderPath"
+										"az_alfredForMayaFrameOverrideRenderPathEnableCheckBoxGrp";
+										textFieldButtonGrp
+										-label "Folder"
+										-columnAlign 1 "right"
+									    -columnWidth3 ($mainOffset+35) 230 100
+									    -bl "Browse"
+										-fileName  "" 
+									    -bc "fileBrowserDialog -m 4 -fc \"az_alfredForMayaGUI_OverrideRenderPath\" -an \"Browse Rendering Output Directory\" -om \"\";"
+										-enable false
+									    "az_alfredForMayaFrameOverrideRenderPathTextFieldButtonGrp";
+																				
+								setParent az_alfredForMayaWin|az_alfredForMayaMainForm|az_alfredForMayaTabLayout|az_alfredForMayaColor1|az_alfredForMayaRenderOptions|az_alfredForMayaColumn1|az_alfredForMayaFrameOverride|az_alfredForMayaFrameOverrideColumn1;
+								frameLayout
+								-collapsable false
+								-collapse false
+								-borderVisible true 
+								-borderStyle "etchedIn"
+								-label "Override Image Filename"
+								-labelVisible true
+								-labelAlign "top"
+								-marginWidth 3 
+								-marginHeight 3
+								"az_alfredForMayaFrameOverrideImageFilename";
+								
+									columnLayout -rowSpacing 5;
+										checkBoxGrp
+	 									-numberOfCheckBoxes 1
+										-columnAlign 1 "left"
+										-columnWidth2 ($mainOffset-5) 300 
+	 									-label ""
+										-label1 "Enable"
+										-cc "az_alfredForMayaGUI_updateOverrideImageFilename"
+										"az_alfredForMayaFrameOverrideImageFilenameEnableCheckBoxGrp";
+										textFieldGrp
+										-label "Filename"
+										-columnAlign 1 "right"
+										-columnWidth2 ($mainOffset+49) 216
+										-enable false
+										"az_alfredForMayaFrameOverrideImageFilenameEnableTextFieldGrp";
+		  					
+	  			
+				setParent az_alfredForMayaWin|az_alfredForMayaMainForm|az_alfredForMayaTabLayout;
+				scrollLayout
+				-childResizable true
+                -horizontalScrollBarThickness 0
+                -verticalScrollBarThickness 16
+				"az_alfredForMayaColor2";
+							
+					frameLayout
+					-borderVisible false 
+					-borderStyle "in"
+					-labelVisible false
+					-labelAlign "bottom"
+					-marginWidth 1 
+					-marginHeight 1 
+					"az_alfredForMayaAlfredOptions";
+					
+						columnLayout -adjustableColumn true "az_alfredForMayaColumn2";
+							frameLayout
+							-collapsable true
+							-borderVisible true 
+							-borderStyle "etchedIn"
+							-label "Common Options"
+							-labelVisible true
+							-marginWidth 3 
+							-marginHeight 3
+							"az_alfredForMayaCommonOptions";
+							
+								columnLayout -rowSpacing 5;
+										checkBoxGrp
+	 									-numberOfCheckBoxes 1
+										-columnAlign 1 "left"
+										-columnWidth2 ($mainOffset-5) 300 
+	 									-label ""
+										-label1 "Send Paused Job"
+										"az_alfredForMayaCommonOptionsSendPausedJobCheckBoxGrp";
+										checkBoxGrp
+	 									-numberOfCheckBoxes 1
+										-columnAlign 1 "left"
+										-columnWidth2 ($mainOffset-5) 300 
+	 									-label ""
+										-label1 "Enable Cleanup"
+										-value1 true
+										"az_alfredForMayaCommonOptionsEnableCleanupCheckBoxGrp";
+										separator -height 5 -width 2000 -style "in";;
+										rowColumnLayout
+										-numberOfColumns 2
+										-columnWidth 1 ($mainOffset+53+230+50)
+										-columnWidth 2 45;
+											textFieldButtonGrp
+											-label "Batch file "
+											-columnAlign 1 "right"
+										    -columnWidth3 ($mainOffset+53) 230 50
+										    -bl "Browse"
+											-fileName $mayabatch 
+										    -bc "fileBrowserDialog -m 0 -fc \"az_alfredForMayaGUI_BrowseMayaBatchFile\" -an \"Open\" -dialogStyle 2 -windowTitle \"Browse mayabatch file\" -om \"\";"
+											-enable true
+										    "az_alfredForMayaCommonOptionsPathToMayaBatchTextFieldButtonGrp";
+											button
+											-label "Save"
+											-command "az_alfredForMayaGUI_SaveMayaBatchFile"
+											"az_alfredForMayaCommonOptionsPathToMayaBatchBtnSave";
+										
+							
+							setParent az_alfredForMayaWin|az_alfredForMayaMainForm|az_alfredForMayaTabLayout|az_alfredForMayaColor2|az_alfredForMayaAlfredOptions|az_alfredForMayaColumn2;
+							frameLayout
+							-collapsable true
+							-collapse true
+							-borderVisible true 
+							-borderStyle "etchedIn"
+							-label "View Command"
+							-labelVisible true
+							-marginWidth 3 
+							-marginHeight 3
+							"az_alfredForMayaFrameOverrideViewCommand";
+							
+								columnLayout -rowSpacing 5;
+										checkBoxGrp
+	 									-numberOfCheckBoxes 1
+										-columnAlign 1 "left"
+										-columnWidth2 ($mainOffset-5) 300 
+	 									-label ""
+										-label1 "Enable"
+										-value1 true
+										-cc "az_alfredForMayaGUI_updateViewCommand"
+										"az_alfredForMayaFrameOverrideViewCommandEnableCheckBoxGrp";
+										textFieldButtonGrp
+										-label "Command"
+										-columnAlign 1 "right"
+									    -columnWidth3 ($mainOffset+53) 230 100
+									    -bl "  Save  "
+										-text  $viewCommand 
+									    -bc "az_alfredForMayaGUI_SaveViewCommand"
+										-enable true
+									    "az_alfredForMayaFrameOverrideViewCommandTextFieldButtonGrp";
+							
+							setParent az_alfredForMayaWin|az_alfredForMayaMainForm|az_alfredForMayaTabLayout|az_alfredForMayaColor2|az_alfredForMayaAlfredOptions|az_alfredForMayaColumn2;
+							frameLayout
+							-collapsable true
+							-collapse true
+							-borderVisible true 
+							-borderStyle "etchedIn"
+							-label "Service Selection Key"
+							-labelVisible true
+							-marginWidth 3 
+							-marginHeight 3
+							"az_alfredForMayaFrameOverrideServiceSelectionKey";
+							
+								columnLayout -rowSpacing 5;
+									textFieldButtonGrp
+									-label "Name      "
+									-columnAlign 1 "right"
+									-columnWidth3 ($mainOffset+53) 230 100
+									-bl "  Save  "
+									-text  $serviceKey 
+									-bc "az_alfredForMayaGUI_SaveServiceSelectionKey"
+									-enable true
+									"az_alfredForMayaFrameOverrideServiceSelectionKeyTextFieldButtonGrp";
+  						
+			tabLayout -edit
+  			-tabLabel "az_alfredForMayaColor1" "Render Options"
+			-tabLabel "az_alfredForMayaColor2" "Alfred Options"
+  			"az_alfredForMayaTabLayout";
+			
+			window -edit
+			-width 500
+			-height (519 + (size($az_alfredForMayaGUI_listRenderLayers)-1)*31)
+			"az_alfredForMayaWin";
+			
+			setParent az_alfredForMayaWin|az_alfredForMayaMainForm;
+			button -label "Send Render Job" 
+			-align "center"
+			-command ("az_alfredForMayaGUI_SendRenderJob(0)")
+			"az_alfredForMayaBtnSend";
+			button -label "Apply" 
+			-align "center"
+			-command ("az_alfredForMayaGUI_SendRenderJob(1)")
+			"az_alfredForMayaBtnApply";
+			button -label "Close" 
+			-align "center" 
+			-command "deleteUI az_alfredForMayaWin"
+			"az_alfredForMayaBtnClose";
+			
+		formLayout -edit
+				-attachForm "az_alfredForMayaTabLayout" "top" 1
+				-attachForm "az_alfredForMayaTabLayout" "bottom" 33
+				-attachForm "az_alfredForMayaTabLayout" "left" 1
+				-attachForm "az_alfredForMayaTabLayout" "right" 1 
+							    	
+			    -attachNone "az_alfredForMayaBtnSend" "top" 
+			    -attachForm "az_alfredForMayaBtnSend" "left"	5
+				-attachPosition	"az_alfredForMayaBtnSend" "right" 3 33
+			    -attachForm "az_alfredForMayaBtnSend" "bottom" 5
+			    	
+			    -attachOppositeControl "az_alfredForMayaBtnApply" "top" 0 "az_alfredForMayaBtnSend"
+				-attachPosition "az_alfredForMayaBtnApply" "left" 3 33
+				-attachPosition	"az_alfredForMayaBtnApply" "right" 3 66
+			    -attachForm "az_alfredForMayaBtnApply" "bottom" 5
+			    	 
+			    -attachOppositeControl "az_alfredForMayaBtnClose" "top" 0 "az_alfredForMayaBtnApply"
+				-attachPosition "az_alfredForMayaBtnClose" "left" 3 66
+				-attachPosition "az_alfredForMayaBtnClose" "right" 3 99
+			    -attachForm "az_alfredForMayaBtnClose" "bottom" 5 
+				"az_alfredForMayaMainForm";
+ }
+showWindow;
+}

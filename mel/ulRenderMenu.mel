@@ -1,0 +1,632 @@
+//-------------------------------------------------
+//   made by Alexander Sknarin
+//   witcher.lutojar@gmail.com
+//   it is new ulitka render menu
+//   ulRenderMenu() contains only menu item calls --- all complex dynamiv meni items should be written as separate functions:
+//
+//   ulSetRenderRezMenu     - Creating Dynamic Resolution Selection Menu
+//   ulSetRenderCameraMenu  - Creating Dynamic Camera Selection Menu
+//   ulSetRenderCamera      - Creating Dynamic Camera Selection Menu
+//   ulSetSceneDirMenu      - Creating Dynamic Open Scene Folder Menu
+//
+//   then go other auxiliary functions
+//
+//   ulRenderMainProc    - Main Procedure To start renderind process
+//   ulExtractDirectory  - Returns folder name from path
+//   ulExtractFileName   - Returns file name from path
+//   ulSceneName         - Returns scene name without ".mb"
+//   ulGetCurFrameCamera - Returns name of present model pane camera
+//   ulSetPreRenderMEL   - Set custom pre render Mel Script 
+//                         IMPORTANT: if you want to add new features to standart pre render MEL you 
+//                         HAVE TO write it here.
+
+
+
+
+
+
+global proc ulRenderMenu()
+{
+	menuItem -l "RENDER:" -c "ulRenderMainProc(0, $ul_renderListStr); $ul_renderMode = 0; print \"Preview render started\";" -i pxrm.xpm; //Render current frame for preview
+	//Render Current frame settings:
+	ulDisplayRenderQuckOptions();
+	
+	menuItem -divider true;
+	
+	menuItem -l "BATCH RENDER" -c "ulRenderMainProc(1, $ul_renderListStr); $ul_renderMode = 1; print \" Batch render started\";" -i pxrm.xpm;
+	menuItem -l "BATCH RENDER CURRENT FRAME" -c "ulRenderMainProc(2, $ul_renderListStr); $ul_renderMode = 2; print \" Batch render started\";" -i pxrm.xpm;
+	menuItem -l "BATCH RENDER LIST OF FRAMES..." -c "ulRenderMainProc(3, $ul_renderListStr); $ul_renderMode = 4; print \"Render list of frames started\"" -i pxrm.xpm; //to do: make menu with option box, to set list of frames once, and, if it isnt changed render in without opening dialog
+	menuItem -divider true;
+	
+	menuItem -l "Alfred For Maya" -c "az_alfredForMaya_GUI";     //to do: make menu with option box
+	menuItem -divider true;
+	
+	ulSetRenderRezMenu();                                        //dynamic rezolution menu
+	ulSetRenderCameraMenu();                                     //dynamic camera selection menu
+	menuItem -divider true;
+	
+	menuItem -l "Save all as preset" -c "print \" Save all as preset\"";
+	menuItem -l "Save presets by template" -sm 1 -to 0;
+		setParent -menu ..;
+	menuItem -l "Load project preset" -sm 1 -to 0;
+		setParent -menu ..;
+	menuItem -l "Load global preset" -sm 1 -to 0;
+		setParent -menu ..;
+	menuItem -divider true;
+	
+	menuItem -l "Channels manager" -c "print \" open Channels manager window\"";
+	menuItem -l "Choose render folder" -c "print \" Open browse dialog\"";
+	menuItem -divider true;
+	
+	menuItem -l "Clear crop" -c "print \"Clear crop\"";
+	menuItem -l "Clear shadows" -c "print \"Clear shadows\"";
+	menuItem -l "Clear RIB" -c "print \"Clear RIB\"";
+	menuItem -divider true;
+	
+	menuItem -l "Render on all cores" -c "print \"Render on all cores\"";
+	menuItem -l "Render on one core" -c "print \"Render on one core\"";
+	menuItem -divider true;
+	
+	menuItem -l "Set RFM extra options" -c "print \"Set RFM exstra options\"";
+	menuItem -divider true;
+	
+	//---------Open Explorer on directories section
+	ulOpenSceneDirMenu();                                        //dynamic open current folder menu
+	ulOpenRenderDirMenu();                                       //dynamic open Redner Folder
+	ulOpenRibDirMenu();
+	ulOpenShadersDirMenu();
+	//menuItem -l "Presets dir: "-c "print \"Presets dir\"";        //waiting for ulitka-unified Renderman workspace ini
+	menuItem -divider true;
+	
+	menuItem -l "Help..." -c "system(\"load http://www.ulitkadoc.ru:8099\");";
+		
+}
+
+global proc ulRenderMenuPopup(string $palMenu)
+{
+    setParent -menu $palMenu;
+    string $items[] = `menu -query -ia $palMenu`;
+    for ($item in $items)
+    {
+		deleteUI $item;
+    }
+
+	ulRenderMenu();
+}
+
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+//-------------MENU ITEM PROCEDURES:-------------------------------------------------------------------------------------------------
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+//---Render Options Menu Items ------------------------------
+
+//---Quick access to render options
+global proc ulDisplayRenderQuckOptions()
+{
+	//Display Style selection
+	if (`optionVar -exists "rmanPreviewDisplayStyle"`)
+	{
+		$ul_RenderVewDS = false;
+		$ul_ItDS = false;
+		$ul_FileDS = false;
+		
+		int $ul_presentDisplayStyle = `optionVar -q "rmanPreviewDisplayStyle"`;
+		
+		switch($ul_presentDisplayStyle)
+		{
+			case 1: $ul_RenderVewDS = true; break;
+			case 2: $ul_ItDS = true; break;
+			case 3: $ul_FileDS = true; break;
+		}
+		
+		radioMenuItemCollection;
+		menuItem -radioButton $ul_RenderVewDS -l "-render to Render view" -c "optionVar -intValue \"rmanPreviewDisplayStyle\" 1; optionVar -q \"rmanPreviewDisplayStyle\";";
+		menuItem -radioButton $ul_ItDS -l "-render to It" -c "optionVar -intValue \"rmanPreviewDisplayStyle\" 2; optionVar -q \"rmanPreviewDisplayStyle\";";
+		menuItem -radioButton $ul_FileDS -l "-render to file" -c "optionVar -intValue \"rmanPreviewDisplayStyle\" 3; optionVar -q \"rmanPreviewDisplayStyle\";";
+		
+			
+	}else
+	{
+		print "there is no such option: \"rmanPreviewDisplayStyle\"\n";
+	}
+	
+	//Render selected objects only
+	if (`optionVar -exists "renderViewRenderSelectedObj"`)
+	{
+		if(!`optionVar -q "renderViewRenderSelectedObj"`)
+		{
+			menuItem -checkBox false -l "-selected objects only" -c "optionVar -intValue \"renderViewRenderSelectedObj\" 1; optionVar -q \"renderViewRenderSelectedObj\";";
+		}
+		if(`optionVar -q "renderViewRenderSelectedObj"`)
+		{
+			menuItem -checkBox true -l "-selected objects only" -c "optionVar -intValue \"renderViewRenderSelectedObj\" 0; optionVar -q \"renderViewRenderSelectedObj\";";
+		}
+	}else
+	{
+		print "there is no such option: \"renderViewRenderSelectedObj\"\n";
+	}
+	
+	//Lock renderable camera
+	if (`optionVar -exists "rmanPreviewUseFirstRenderableCamera"`)
+	{
+		if(!`optionVar -q "rmanPreviewUseFirstRenderableCamera"`)
+		{
+			menuItem -checkBox false -l "-lock camera" -c "optionVar -intValue \"rmanPreviewUseFirstRenderableCamera\" 1; optionVar -q \"rmanPreviewUseFirstRenderableCamera\";";
+		}
+		if(`optionVar -q "rmanPreviewUseFirstRenderableCamera"`)
+		{
+			menuItem -checkBox true -l "-lock camera" -c "optionVar -intValue \"rmanPreviewUseFirstRenderableCamera\" 0; optionVar -q \"rmanPreviewUseFirstRenderableCamera\";";
+		}
+	}else
+	{
+		print "there is no such option: \"rmanPreviewUseFirstRenderableCamera\"\n";
+	}
+	
+	//Show AOV's
+	if (`optionVar -exists "rmanPreviewAOVs"`)
+	{
+		if(!`optionVar -q "rmanPreviewAOVs"`)
+		{
+			menuItem -checkBox false -l "-show AOVs" -c "optionVar -intValue \"rmanPreviewAOVs\" 1; optionVar -q \"rmanPreviewAOVs\";";
+		}
+		if(`optionVar -q "rmanPreviewAOVs"`)
+		{
+			menuItem -checkBox true -l "-show AOVs" -c "optionVar -intValue \"rmanPreviewAOVs\" 0; optionVar -q \"rmanPreviewAOVs\";";
+		}
+	}else
+	{
+		print "there is no such option: \"rmanPreviewAOVs\"\n";
+	}
+}
+
+
+
+
+//---Creating Dynamic Resolution Selection Menu--------------
+global proc ulSetRenderRezMenu()	
+{
+string $rezs=" \
+				4096 3112 4k_Full(4096x3112) \
+				2048 1556 2k_Full(2048x1556) \
+				2048 1152 2k_1.78(2048x1152) \
+				2048 1107 2k_1.85(2048x1107) \
+				2048 872  2k_2.35(2048x872) \
+				1920 1080 1080p_(1920x1080) \
+				1280 720  720p_(1280x720) \
+				1024 778  1k_(1024x778) \
+				1024 575  1k_1.78(1024x575) \
+				1024 554  1k_1.85(1024x554) \
+				1024 436  1k_2.35(1024x436) \
+				800  600  800x600_(just_800x600) \
+				768  576  PAL_sq_(768x576_1.0) \
+				640  480  PC_(640x480) \
+				320  240  PC_half_(320x240) \
+				";
+				
+	string $dspyRez = `getAttr -as defaultResolution.width` + "x" + `getAttr -as defaultResolution.height`; //get resolution from Maya as 1024x778
+	string $buffer[];
+	$numTokens = `tokenize $rezs " \n\t,;" $buffer`;//tokenise input string
+	
+	int $i;
+	int $bCustom = true;//If present resolution isn't in input list "custom" radiobutton is set
+		
+	menuItem -l ("Display resolution ("+$dspyRez+")") -sm true -to false;
+	
+	radioMenuItemCollection;
+	
+	for ($i = 0; $i< $numTokens; $i+=3){
+		int $bCur = false;//set current radiobutton off
+		if ($dspyRez == ($buffer[$i]+"x"+$buffer[$i+1])) //if maya resolution same as curent
+			{
+				$bCur = true; $bCustom=false;			 //set current radiobutton on but "custom" - off
+			}
+		float $width1 = $buffer[$i];
+		float $height1 = $buffer[$i+1];
+		float $deviceAspect = $width1/$height1;
+		menuItem -radioButton $bCur -l $buffer[$i+2] -c ("setAttr defaultResolution.width "+$buffer[$i]+";"+"setAttr defaultResolution.height "+$buffer[$i+1]+"; setAttr defaultResolution.deviceAspectRatio "+$deviceAspect);
+	}
+	
+	menuItem -radioButton $bCustom -l "custom";
+	
+	setParent -m ..;
+}
+
+//---Creating Dynamic Camera Selection Menu --------------
+global proc ulSetRenderCameraMenu()
+{
+
+	string $parsAllCameras[] = `ls -ca`;
+	string $curCamera ="";
+	for($iCam in $parsAllCameras)
+	{
+		int $renderCheck = `getAttr ($iCam+".renderable")`;
+		if($renderCheck == 1)
+		{
+			$curCamera = $iCam;
+			break;
+		}else{
+			$curCamera = "unknown";
+		}
+	}
+	string $parentCam[] = `listRelatives -p $curCamera`;
+	string $ShowMenu = `menuItem -l ("Cameras ("+$parentCam[0]+")") -sm true`;
+
+	radioMenuItemCollection;
+
+	string $cam = ulGetCurFrameCamera(0);
+	if ($cam != ""){
+		string $pars[] = `listRelatives -p $cam`;
+		string $cmd = ("ulSetRenderCamera "+$cam);
+		int $chk = ($curCamera == $cam);
+		menuItem -cb $chk -bld 1 -l ("current panel: "+$pars[0]) -c $cmd;
+	} else {
+		menuItem -cb 0 -bld 1 -l "unknown camera - select camera view";
+	}
+	string $listCam[] =`ls -ca`;
+	for( $cam in $listCam ) 
+	{
+		$pars = `listRelatives -p $cam`;
+		$cmd = ("ulSetRenderCamera "+$cam);
+			int $check = 0;
+		if($cam==$curCamera) $check=1;
+		menuItem -radioButton $check -bld ($check) -l $pars[0] -c $cmd;
+	}
+	setParent -m ..;
+}
+global proc ulSetRenderCamera(string $current_camera)
+{
+	$camera_list = `ls -ca`;
+	for($iCam in $camera_list)
+	{
+		if($iCam == $current_camera)
+		{
+			setAttr ($iCam+".renderable") 1;
+		}else
+		{
+			setAttr ($iCam+".renderable") 0;
+		}
+	}
+}
+
+//---Creating Dynamic Open Scene Folder Menu-------------------------
+global proc ulOpenSceneDirMenu()
+{
+	string $sceneDir = `file -q -location`;
+	$sceneDir = ulExtractDirectory($sceneDir);
+	string $sceneDirCmd = "system \"start explorer "+$sceneDir+"\"";
+	$sceneDirCmd = `substituteAllString $sceneDirCmd "/" "\\\\"`;
+	menuItem -l ("Scene dir: " + $sceneDir) -c $sceneDirCmd;
+}
+//---Creating Dynamic Open Render Folder Menu-------------------------
+global proc ulOpenRenderDirMenu()
+{
+	string $ul_renderDir = `rman workspace GetDir rfmImages`;
+	string $ul_projDir = `rman workspace GetDir RMSPROJ`;
+	$ul_renderDir = $ul_projDir + $ul_renderDir;
+	
+	string $ul_takeDspyName = `getAttr defaultRenderGlobals.ifp`;
+	$ul_CorrectedDspyName = substituteAllString($ul_takeDspyName, "\\", "/");
+	
+	$newString = $ul_renderDir + "/" + $ul_CorrectedDspyName;
+	
+	string $renderDirCmd = "system \"start explorer "+$newString+"\"";
+	$renderDirCmd = `substituteAllString $renderDirCmd "/" "\\\\"`;
+	
+	menuItem -l ("Render dir: " + $newString) -c $renderDirCmd;
+}
+
+//---Creating Dynamic Open RIB Folder Menu-------------------------
+global proc ulOpenRibDirMenu()
+{
+	string $ribDir = `rman workspace GetDir rfmRIBs`;
+	string $projDir = `rman workspace GetDir RMSPROJ`;
+	$ribDir = $projDir + $ribDir;
+	
+	//----changin $STAGE with actual filename
+	string $buffer[];
+	$numTokens = `tokenize $ribDir "/" $buffer`;
+	for($i=0; $i<size($buffer); $i++)
+	{
+		if($buffer[$i] == "$STAGE")
+			$buffer[$i] = ulSceneName();
+	}
+	string $newString = "//";
+	for($i=0; $i<size($buffer); $i++)
+	{
+		if(($i+1)<size($buffer))
+		{
+			$newString = $newString + $buffer[$i];
+			$newString = $newString + "/";
+		}else
+		{   
+			$newString = $newString + $buffer[$i];
+		}
+	}
+	
+	string $ribDirCmd = "system \"start explorer "+$newString+"\"";
+	$ribDirCmd = `substituteAllString $ribDirCmd "/" "\\\\"`;
+	menuItem -l ("Rib dir: " + $newString) -c $ribDirCmd;
+}
+//---Creating Dynamic Open shaders Folder Menu-------------------------
+global proc ulOpenShadersDirMenu()
+{
+	string $ShadersDir = `rman workspace GetDir rfmShaders`;
+	string $projDir = `rman workspace GetDir RMSPROJ`;
+	$ShadersDir = $projDir + $ShadersDir;
+	
+	//----changin $STAGE with actual filename
+	string $buffer[];
+	$numTokens = `tokenize $ShadersDir "/" $buffer`;
+	for($i=0; $i<size($buffer); $i++)
+	{
+		if($buffer[$i] == "$STAGE")
+			$buffer[$i] = ulSceneName();
+	}
+	string $newString = "//";
+	for($i=0; $i<size($buffer); $i++)
+	{
+		if(($i+1)<size($buffer))
+		{
+			$newString = $newString + $buffer[$i];
+			$newString = $newString + "/";
+		}else
+		{   
+			$newString = $newString + $buffer[$i];
+		}
+	}
+	
+	string $ShadersDirCmd = "system \"start explorer "+$newString+"\"";
+	$ShadersDirCmd = `substituteAllString $ShadersDirCmd "/" "\\\\"`;
+	menuItem -l ("Shaders dir: " + $newString) -c $ShadersDirCmd;
+}
+
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+//-------------OTHER AUXILIARY PROCEDURES:-------------------------------------------------------------------------------------------------
+//- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+//---Main Procedure To start renderind process-------------------------
+global proc ulRenderMainProc(int $rendertype, string $listofframes)
+{
+	//render
+	if($rendertype==0)
+	{
+		//ulSetPreRenderMEL();
+		setAttr -type "string" defaultRenderGlobals.preMel "";
+		setAttr -type "string" defaultRenderGlobals.postMel "";
+		RenderIntoNewWindow;
+		
+	}
+	//batch render
+	if($rendertype==1)
+	{
+		ulSetPreRenderMEL();
+		execRmanMenuItem("BatchRender");
+
+	}
+	//render current frame
+	if($rendertype==2)
+	{
+		ulSetPreRenderMEL();
+		$ul_CurrentFrame = `currentTime -q`;
+		ulRenderCustomFrame($ul_CurrentFrame, $ul_CurrentFrame);
+		
+	}
+	//render list of frames from dialogue BOX
+	if($rendertype==3)
+	{
+		ulSetPreRenderMEL();
+		ulRenderListOfFramesGUI();
+		
+	}
+	//render list of frames from render button
+	if($rendertype==4)
+	{
+		ulSetPreRenderMEL();
+		ulRenderListOfFrames($listofframes);
+		
+	}
+}
+
+//---Render CUSTOM frame ----------------------
+global proc ulRenderCustomFrame(int $ul_startFrameNumber, int $ul_endFrameNumber)
+{
+	$ul_startFrameTMP = `getAttr "defaultRenderGlobals.startFrame"`; //take original frame length
+	$ul_endFrameTMP = `getAttr "defaultRenderGlobals.endFrame"`;
+
+	setAttr "defaultRenderGlobals.startFrame" $ul_startFrameNumber;      //set render range with custom frames
+	setAttr "defaultRenderGlobals.endFrame" $ul_endFrameNumber;
+
+	execRmanMenuItem("BatchRender");
+
+	setAttr "defaultRenderGlobals.startFrame" $ul_startFrameTMP;          //set original time range back
+	setAttr "defaultRenderGlobals.endFrame" $ul_endFrameTMP;
+}
+//--------------------------------------
+//Render list of frames block ----------
+//--------------------------------------
+
+//---Render LIst of Frame Core Function
+global proc ulRenderListOfFrames(string $ul_InputListOfFrames)
+{
+int $ul_stringCheck = isValidString($ul_InputListOfFrames, "[0-9][0-9,.-]*"); 
+if($ul_stringCheck)
+{
+    string $buffer[];
+    int $numtokkens = `tokenize $ul_InputListOfFrames ",." $buffer`;
+    
+    for($i=0; $i<$numtokkens; $i++)
+    {
+        int $ul_rangeCheck = `gmatch $buffer[$i] "*-*"`;
+        if(!$ul_rangeCheck)
+        {
+            int $ul_tmpFrame = int($buffer[$i]);
+            //render one frame
+			print ("FRAME NUMBER: "+ $ul_tmpFrame + " RENDERED SUCCESFULLY!!!\n");
+            
+        }else{
+            //separate numbers
+            string $numStrBuffer[];
+            int $numStrTokkens = `tokenize $buffer[$i] "-" $numStrBuffer`;
+            //single number check
+            if($numStrTokkens==1)
+            {
+                warning ("Wrong range definition on " + ($i+1) + "th range element: \"" + $buffer[$i] + "\". Only One number set. Render cancelled\n");
+                break;
+            }
+            
+            int $ul_tmpFirsFrameOfRange = int($numStrBuffer[0]);
+            int $ul_tmpLastFrameOfRange = int($numStrBuffer[1]);
+            //wrong order check
+            if($ul_tmpFirsFrameOfRange>$ul_tmpLastFrameOfRange)
+            {
+                warning ("Wrong range frame order in " + ($i+1) + "th range element: \"" + $buffer[$i] + "\". First number bigger than second. Render cancelled\n");
+                break;
+            }
+            //render range of frames
+            print ("Range found " +$buffer[$i] + "  \n");
+                  
+        }
+    
+    }
+}else{
+    warning "Wrong symbols in a given frame numbers!!!! Only \"0-9 . , - \" allowed. Render cancelled\n";
+}
+}
+//---Render LIst of Frame GUI ----------------------------------------------
+global proc ulRenderListOfFramesGUI()
+{
+//------------------------------------------------------------------------
+//---- ANNOTATIONS
+//------------------------------------------------------------------------
+string $ANNinputStringLabel = "Write frame numbers and press Enter";
+string $ANNuRLoFHelp = "Write frame numbers and press Enter";
+string $ANNuRLoFDescription = " \
+Write frame numbers to render them separately.\n \
+You can use as single frame numbers (separated with dot or comma)\n \
+as frame ranges, defined by dash symbol.\n \
+IMPORTANT:\n \
+- Using any symbol instead of \"0-9 . ,\" - will cause Error\n\
+Render will be terminated immediately.\n\
+- Using dash with only one number ie: \",-22 or 50-\" - will cause Error\n\
+Render will be terminated on previous List element.\n\
+- Uling inverted ranges ie: \",50-11\" - will cause Error\n\
+Render will be terminated on this List element.\n\
+";
+//------------------------------------------------------------------------
+//---- Commands
+//------------------------------------------------------------------------
+
+//string $ul_frameListInputField_Ecmd = ("$ul_renderListStr = `textField -q -text "+$ul_frameListInputField+"`; print $ul_renderListStr;");
+
+//------------------------------------------------------------------------
+//---- GUI Description
+//------------------------------------------------------------------------    
+    
+    $ul_renderListOfframesWnd = `window -title "Render list of frames"
+                                        -iconName "RLoF"
+                                        -topEdge 512
+                                        -leftEdge 512
+                                        -widthHeight 400 100
+                                        -resizeToFitChildren true`;
+        columnLayout -adjustableColumn true;
+            rowLayout -numberOfColumns 1 -width 400;
+                text -align "center" -label $ANNinputStringLabel -ann $ANNinputStringLabel -width 400;
+            setParent ..;
+            rowLayout -numberOfColumns 1 -width 400;
+                string $ul_frameListInputField = `textField -text "" -ann $ANNinputStringLabel -aie true -width 400`;
+				textField -edit -enterCommand ("$ul_renderListStr = `textField -q -text "+$ul_frameListInputField+"`; print $ul_renderListStr; ulRenderListOfFrames($ul_renderListStr);") $ul_frameListInputField;
+            setParent ..;
+            rowLayout -numberOfColumns 1 -width 400;
+                text -align "center" -label $ANNuRLoFDescription -width 400;
+            setParent ..;
+        setParent ..;
+    
+    showWindow $ul_renderListOfframesWnd;    
+}
+
+
+
+
+
+//---Returns folder name from path--------------------------------------
+global proc string ulExtractDirectory(string $filename)
+{
+	string $buffer[];
+	int $numTokens = `tokenize $filename "//" $buffer`;
+	
+	string $dir = `substitute $buffer[$numTokens-1] $filename ""`;
+	return $dir;
+}
+//---Returns file name without path
+global proc string ulExtractFileName(string $filename)
+{
+	string $buffer[];
+	int $numTokens = `tokenize $filename "//" $buffer`;
+
+	string $dir = $buffer[$numTokens-1];
+	return $dir;
+}
+
+//---Returns scene name without ".mb"
+global proc string ulSceneName()
+{
+	string $scenename[] = `file -q -shn -l`;
+	string $tokenname[];
+	tokenize $scenename[0] "." $tokenname;
+	if($tokenname[0] == "")
+		$tokenname[0] = "untitled";
+	return $tokenname[0];
+}
+
+//---Returns name of present model pane camera -----------------------------
+global proc string ulGetCurFrameCamera(int $message)
+{
+	int $isModPan = 0;
+	string $curPanel = `getPanel -wf`;
+	string $modPanels[] = `getPanel -typ "modelPanel"`;
+	for ($iter in $modPanels){
+		if ($iter == $curPanel) $isModPan = 1;
+	}
+	string $curCamShape = "";
+	if ($isModPan) {
+		$curCamShape = `modelEditor -q -cam $curPanel`;
+	} else {
+		if ($message == 1) warning "you must select camera view"; 
+		return "";
+	}
+	string $tmp[] = `ls -ca $curCamShape`;
+	if ($tmp[0] == ""){
+		$tmp = `listRelatives  -c $curCamShape`;
+		$curCamShape = $tmp[0];
+	}
+	return $curCamShape;
+}
+
+//---Set custom pre render Mel Script IMPORTANT: if you want to add new features ti standart pre render MEL you ought to write it here -----------------------------
+global proc ulSetPreRenderMEL()
+{
+	//PreMel and post mel for generating correct paths
+    
+	//pre-render MEL:
+	setAttr -type "string" defaultRenderGlobals.preMel "$ul_tmpDspyName = `getAttr defaultRenderGlobals.ifp`; $ul_tmpWorkspaceImgPathBase = `rman workspace GetDir rfmImages`; $ul_Filename = basenameEx($ul_tmpDspyName); $ul_ConvertedDisplayPath = substituteAllString($ul_tmpDspyName, \"\\\\\", \"/\"); $ul_FullRenderPath = `rman workspace GetDir rfmImages` + \"/\" + $ul_ConvertedDisplayPath; setAttr \"defaultRenderGlobals.ifp\" -type \"string\" $ul_Filename; rman workspace SetDir rfmImages $ul_FullRenderPath;";
+	print "PRE render MEL set\n";
+	
+	//post-render MEL:
+	setAttr -type "string" defaultRenderGlobals.postMel "setAttr \"defaultRenderGlobals.ifp\" -type \"string\" $ul_tmpDspyName; rman workspace SetDir rfmImages $ul_tmpWorkspaceImgPathBase;";
+	print "POST render MEL set\n";
+	
+	//pre-render frame MEL:
+	setAttr -type "string" defaultRenderGlobals.preRenderMel "";
+	print "PRE render frame MEL set\n";
+	
+	//post-render frame MEL:
+	setAttr -type "string" defaultRenderGlobals.postRenderMel "";
+	print "POST render frame MEL set\n";
+	
+	//Ri Injection Point Render Begin MEL
+	//setAttr -type "string" renderManGlobals.rman__torattr___renderBeginScript "rmanTimeStampScript;";
+	//print "Ri injection point cleaned\n";
+	
+	//setAttr -type "string" renderManGlobals.rman__torattr___postTransformScript "";
+	//print "PRE MEL set";
+}

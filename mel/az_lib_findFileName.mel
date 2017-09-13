@@ -1,0 +1,52 @@
+//###################################################################################
+//  
+//  Script File
+//  MODIFY THIS AT YOUR OWN RISK
+//
+//
+//  Creation Date:  14 March 2005					      
+//
+//  Last revision date: 23 May 2005
+//
+//  Autor: Archie Zbyshek
+//	   zbyshek@mail333.com
+//  
+//  
+// Procedure Name: az_lib_findFileName
+//
+// Description:
+// Library function for finding file name, format:
+// [name].[extention]
+// Call format az_lib_findFileName (<string path>,<int flag>)
+// With flag 1 returns file name with extention
+// With flag 2 returns file name without extention
+// With flag 3 returns extention only
+//####################################################################################
+
+global proc string az_lib_findFileName (string $path,int $flag){
+	
+	string $nameWithoutExt = ""; 
+	string $nameWithExt = "";
+	string $ext = "";
+		
+	// Get file name with extention
+ 	$nameWithExt = `match "[^/]+$" $path`;
+ 	// Get extention
+ 	$ext = `match "[^\\.]+$" $nameWithExt`;
+ 	// Get file name without extention
+ 	$withoutExt = `substitute "(\\.[a-zA-Z]+){1}$" $nameWithExt ""`; // "overriidng" [ext] with blank spaces
+	
+	switch ($flag){
+	 	case 1:
+	 		if (size($nameWithExt)>0)
+	 			return $nameWithExt;
+	 		else
+	 			error "Wrong path, file name not found!";
+	 	case 2:
+	 		return $withoutExt;
+	 	case 3:
+	 		return $ext;
+	 	default:
+			error "Wrong values of arguments, enter 0 or 1\n";
+	 }
+}

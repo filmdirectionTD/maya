@@ -1,0 +1,928 @@
+/*  This file downloaded from Highend3d.com
+''  
+''  Highend3d.com File Information:
+''  
+''    Script Name: projMan_40 v0.4
+''    Author: Imre Tuske
+''    Last Updated: February 19, 2002
+''    Update/Change this file at:
+''    
+
+''  
+''  Please do not alter any information above this line
+''  it is generated dynamically by Highend3d.com and will
+''  be changed automatically on any updates.
+*/
+
+//
+// *** projMan.mel *** Project Manager functions/UI by Imre Tuske, 2000-2002
+//
+//  Version 0.28
+//
+//  Project Manager script for Maya.
+//  Should work on any version and OS. Written and tested on Maya 2.5 NT;
+//  modified for Maya 4.0 NT.
+//
+//  Please note that this version works with Maya 3.0 only.
+//
+//
+//  Author:
+//
+//  Imre Tuske (tuske@pannonline.hu), Hungary
+//
+//
+//  * THIS IS MAILWARE! *
+//
+//   If you use this software regularly and you like it, let me know by dropping me an
+//  e-mail. This will guarantee that I'll keep on writing another useful pieces of MEL
+//  code which will be shared with you. Thanks!
+//
+//  I also apologize that I always upload versions of my scripts containing the most
+//  stupid bugs. :)
+//
+//
+//  Description:
+//
+//  The script keeps track of all projects by maintaining a per-user 'project database'.
+// Projects not listed in the database can be automatically added. It can also switch
+// the workspace when the user opens a scene from another project than the current one.
+// 
+//  Project Manager has an UI replacement for the incomfortable "Project->Set..." item.
+// You can change your existing projects from a list rather than finding them in a
+// directory tree. Projects can also be added to or removed from the database with UI
+// file dialogs.
+//
+//
+//  Working details and compatibility:
+//
+//  Project checking is done when opening a new or existing scene, or quitting from Maya.
+//
+// *** THE MANAGER RECOGNIZES PROJECTS ON DISK BY SEEKING FOR "workspace.mel" IN THE PROJECT
+// ROOT DIRECTORIES, SO DO NOT NAME ANY OF YOUR SCRIPTS "workspace.mel" IF POSSIBLE!!! ***
+//
+//  The manager uses forward slashes even on NT to avoid any 'backslash confusion';
+// Maya NT is able to handle forward slashes in path names. The comparing of project paths
+// are performed in case-insensitive mode (this is the safest way to work both on IRIX and
+// NT, because UNIX is case-sensitive to paths/names but NT is not). So don't use the same
+// path/name in different cases on IRIX if you want to use this script ;-)
+//
+//
+//  Installation:
+//
+//  Put the following line into your userSetup.mel script:
+//
+// source projMan_40; pmInstallScriptJobs();
+//
+//
+//
+//  Version History:
+//
+//  0.28 - Projects specified with UNC paths are now supported.
+//         UI button sets are now can be opened/closed in Maya 4.0 UI style.
+//
+//  0.27 - Fixed very stupid bug in incremental save.
+//
+//  0.26 - Incremental Save checks and prompts if a file already exists with the same name
+//         as the file currently being incrementally saved.
+//
+//  0.25 - Modified for Maya 4.0 (mostly just small cosmetic change)
+//
+//  0.24 - Adds file to the recent files when incremental saving.
+//
+//  0.23 - Incremental Save feature added; implemented both in the project manager window
+//         and in the "File" menu.
+//
+//  0.22 - Project change is now performed as it advised in the Maya MEL FAQs, so now it
+//         (should) work 100% correctly (instead of 99%). Also some file I/O buttons added
+//         to the window for quick Open/Save.
+//
+//  0.21 - Project list file name now contains user name, so multiple users can have their
+//         own project list within a common prefs folder.
+//
+//
+//  Future:
+//
+//  - "Gather Textures": to copy all file textures into the current project from other
+//    locations (like in Softimage); (this should be applied to other specified files
+//    as well).
+//
+// 
+
+
+//
+//  convslash() [local]
+//
+//  Converts backslash characters to simple slashes (used with path names).
+//  Also filters out invalid characters.
+//
+
+////////////////
+// Ulitka notes:
+// updated pmIncrementalSave (19.04.2009 by Evgeny Barulin)
+//   
+
+
+
+proc string convslash( string $inst )
+{
+	string $bs="\\", $fs="/", $out="", $c;
+
+	int $i, $l=size($inst);
+
+	for( $i=1 ; $i<=$l ; $i++ )
+	{
+		if (($c=substring($inst,$i,$i))==$bs) $c=$fs;
+		if (strcmp($c," ")<0) $c="";
+		$out+=$c;
+	}
+	return($out);
+}
+
+
+//
+// *** pmGetUsername() ***
+//
+//  Returns the name of the current user (or empty string if
+//  the 'username' env variable doesn't exist).
+//
+//
+
+global proc string pmGetUsername()
+{
+	return(getenv("username"));
+}
+
+
+//
+// *** pmFindWorkspace ***
+//
+//  Finds the workspace the path points into.
+//
+
+global proc string pmFindWorkspace( string $path )
+{
+	string	$p=convslash($path), $r="";
+	int		$n, $s;
+
+	if (size(match("/$",$p))) $p=substring($p,1,size($p)-1);
+	
+	while( ($r=="")&&($p!="") )
+	{
+		if (`file -q -ex ($p+"/workspace.mel")`) $r=$p;
+		
+		$s=size($p);
+		$n=size(match("[^/]*$",$p))+1;
+		
+		$p=( $n<$s ? substring($p,1,$s-$n) : "" );
+	}
+	
+	return($r);
+}
+
+//
+// *** pmSetWorkspace ***
+//
+//  Sets the workspace to the given path.
+//
+
+global proc pmSetWorkspace( string $wspath )
+{
+	workspace -o $wspath;
+	np_resetBrowserPrefs;
+	//pv_resetWorkspace;
+	//pv_goCurrentProject;
+
+	if (`window -ex projectViewerWindow`) pv_resetWorkspace; // force the layout to be redone
+	workspace -dir `workspace -q -rd`;
+
+//	sp_setLocalWorkspaceCallback ($wspath) "directory";
+}
+
+//
+// *** pmProjectExists ***
+//
+//  Check if the given project exists in the project list file.
+//  Returns the number of occurrences in the list file.
+//
+
+global proc int pmProjectExists( string $file, string $proj )
+{
+	int $fh,$success=0;
+
+	string $p=tolower(pmFindWorkspace($proj));
+
+	if ($p!="")
+	{
+		if ($fh=fopen($file,"r"))
+		{
+			string $l;
+
+			for( ; feof($fh)==0 ; )
+			{
+				$l=tolower(convslash(fgetline($fh)));
+				
+				if ( strcmp($p,$l)==0 ) $success++;
+			}
+			fclose($fh);
+		}
+		else warning("Cannot open project list file '"+$file+"' for reading.\n");
+	}
+
+	if ($success>1) warning("pmProjectExists: multiple entries for '"+$proj+"' in file '"+$file+"'\n");
+
+	return($success);
+}
+
+//
+// *** pmProjectAdd ***
+//
+//  Adds the given project path to the project list file.
+//  Returns zero if project already exists, the given project is invalid
+//  or something went wrong.
+//
+
+global proc int pmProjectAdd( string $file, string $proj )
+{
+	int $fh, $success=0;
+
+	string $p=pmFindWorkspace($proj);
+
+	if ($p !="")
+	{
+		if ( pmProjectExists($file,$p)==0 )
+		{
+			if ($fh=fopen($file,"a+"))
+			{
+				fprint($fh,$p+"\n");
+				$success++;
+				fclose($fh);
+			}
+			else warning("pmProjectAdd: cannot append to file '"+$file+"'\n");
+		}
+	}
+	return($success);
+}
+
+//
+// *** pmCurrentProject ***
+//
+//  Returns the name of the current project.
+//
+
+global proc string pmCurrentProject()
+{
+	return(pmFindWorkspace(`workspace -q -rd`));
+}
+
+//
+// *** pmProjectAddCurrent ***
+//
+//  Adds the current project to the project list file.
+//
+
+global proc int pmProjectAddCurrent( string $file )
+{
+	return(pmProjectAdd($file,pmCurrentProject()));
+}
+
+//
+// *** pmListFile ***
+//
+//  Returns the absolute path/name of the project list file.
+//  If username can be determined, project list files will be
+//  created on a per-user basis.
+//
+//
+
+global proc string pmListFile()
+{
+	string $prefs=`internalVar -upd`; // user prefs dir
+	string $user=pmGetUsername();
+
+	$prefs=$prefs+".projects";
+	if ($user!="") $prefs=($prefs+"."+$user);
+
+//	if ( `file -q -exists ($prefs)`==0 ) {}
+
+	return($prefs);
+}
+
+//
+// *** pmIncrementalSave ***
+//
+//  Saves a new version of the scene with the name <scenename>_<number>.<ext>.
+//
+//
+
+global proc pmIncrementalSave()
+{
+	string $f=`file -q -sn`;								// get file name
+	string $ft[]=`file -q -typ`;							// file type (mayaAscii, etc.)
+
+	if ($f!="")
+	{
+
+
+			
+
+		// * extracting base filename, extension and version number *
+		string $basename = basenameEx($f);
+		string $extension = fileExtension($f);
+		string $path = substring($f, 1, size($f)- size($basename)-size($extension)-1);
+		string $b = `match ".*[0-9]+" $basename`;  //strip non digit end
+		string $c = `match "[0-9]+$" $b`;			//cut chars before digits from the end
+		string $d = `match ".*[^0-9]+" $b`;		//portion before final digits
+		string $e = `match "[^0-9]+$" $basename`;	//striped end
+		int $sz_full = `size $c`;
+		int $num = int ($c) + 1;
+		int $sz_cur = size (string($num));
+		string $num_str = $sz_full > $sz_cur ? substring($c, 1, $sz_full- $sz_cur) : "";  
+		string $res_basename = ($d + $num_str + (string($num))+$e);
+
+		$f=($path+$res_basename+"."+$extension);
+
+
+//		$f=($f+$vs+$ext);
+		
+		$w = 1;
+		if (`confirmDialog -t "Save [+]" -m ("Save Scene As '"+$f+"' ?") -b "Ok" -b "Cancel" -cb "Cancel" -ds "Cancel"`!="Cancel")
+		{
+			file -rename $f;
+
+			if (`file -q -ex $f`)
+			{
+				if (`confirmDialog -t "File Already Exists" -m ("Overwrite already existing file '"+$f+"'?") -b "Yes" -b "No" -cb "No" -ds "No"`!="Yes")
+					$w=0;
+			}
+
+			if ($w)
+			{
+				//FileMenu_SaveItem;
+				warning("projMan: Saving File...");
+				evalEcho("file -save");
+				addRecentFile($f,$ft[0]);							// add to the recent files list
+			}
+		}
+	}
+	else projectViewer SaveAs;
+}
+
+
+// --USER INTERFACE STUFF---------------------------------------------------------------------
+
+global string $pmUIProjList[];	// string array to hold project list file
+
+//
+// *** pmUIAddCurrentProject ***
+//
+//  Checks if the current project is in the project list.
+//  If not, adds it and notifies the user.
+//  Also refreshes the manager window if it's opened.
+//
+
+global proc pmUIAddCurrentProject()
+{
+	string $current=pmCurrentProject();
+
+	if ( pmProjectExists(pmListFile(),$current)==0 )
+	{
+		string $c=`confirmDialog -m ("Project '"+$current+"' not registered in the\nproject database. Add it now?")
+				-ma "center" -b "Yes" -b "No" -db "Yes" -cb "No" -ds "No"`;
+
+		if ($c=="Yes") pmProjectAdd(pmListFile(),$current);
+
+		if ( (`window -exists pmUICTManagerWindow`)==true )
+		{
+			pmReadProjList(pmListFile());
+			pmUIRefreshScrollList();
+		}
+	}
+}
+
+//
+// *** pmReadProjList ***
+//
+//  Reads the project list database in.
+//
+
+global proc int pmReadProjList( string $file )
+{
+	global string $pmUIProjList[];
+	string $p;
+	int $fh,$i;
+
+	for($i=0;$i<size($pmUIProjList);$i++) $pmUIProjList[$i]="";
+
+	$i=0;
+	if ( ($fh=fopen($file,"r")) )
+	{
+		for( ; feof($fh)==0 ; )
+		{
+			$p=convslash(fgetline($fh));
+			if ($p !="" ) $pmUIProjList[$i++]=$p;
+		}
+		fclose($fh);
+	}
+	else print("pmReadProjList: cannot open file "+$file+" for reading\n");
+
+	pmUIRefreshScrollList(); // refresh the listview if manager opened
+
+	return($i);
+}
+
+//
+// *** pmWriteProjList ***
+//
+//  Writes the project list database out.
+//
+
+global proc pmWriteProjList( string $file )
+{
+	global string $pmUIProjList[];
+	int $fh;
+
+	if ( ($fh=fopen($file,"w")) )
+	{
+		string $p;
+
+		for( $p in $pmUIProjList )
+			if ($p !="") fprint($fh,$p+"\n");
+
+		fclose($fh);
+	}
+	else print("pmWriteProjList: cannot open "+$file+" for writing\n");
+}
+
+//
+// *** pmUIRefreshScrollList ***
+//
+//  Writes the list of projects to the main window list.
+//
+global proc pmUIRefreshScrollList()
+{
+	global string $pmUIProjList[];
+	int $i=0;
+
+	if ((`window -exists pmUICTManagerWindow`)==true)
+	{
+		textScrollList -e -removeAll "pmUICTProjList";
+
+		for($i=0;$i<size($pmUIProjList);$i++)
+			if ( $pmUIProjList[$i] !="" )
+				textScrollList -e -a ($pmUIProjList[$i]) "pmUICTProjList";
+
+		// set current project in textScrollList and textFieldGrp
+
+		textScrollList -e -si (pmCurrentProject()) pmUICTProjList;
+		textFieldGrp -e -tx (pmCurrentProject()) pmUICTCurrProj;
+	}
+}
+
+//
+// *** pmUIManagerWindow ***
+//
+//  Opens the Project Manager window; fills the textScrollList control with the
+// project list.
+//
+
+proc sep() { separator -st "single"; }
+proc txt( string $text ) { text -al "center" -l $text; }
+
+proc bts( string $title, int $manage )
+{
+	text -al "center" -l $title;
+	
+	string $b=`iconTextButton -i1 "horizontalCloseBar.xpm" -w 16 -h 8`;
+	string $c=`columnLayout -adj 0 -cal "center" -cat "both" 2 -rs 2 -m $manage`;
+	
+	iconTextButton -e -c ("pmUIToggleButtons(\""+$c+"\")") $b;
+}
+
+proc bte()
+{
+	setParent ..;
+	separator -st "none";
+}
+
+global proc pmUIToggleButtons( string $l )
+{
+	if (`layout -ex $l`) layout -e -m (1-`layout -q -m $l`) $l;
+}
+
+
+global proc pmUIManagerWindow()
+{
+	if (`window -exists pmUICTManagerWindow`) deleteUI("pmUICTManagerWindow");
+
+	window -t "Project Manager" -wh 640 480 -rtf false pmUICTManagerWindow;
+
+	formLayout -nd 100 mf;
+
+	columnLayout -adj 1 -cal "center" -cat "both" 4 -parent mf il;
+	textFieldGrp -label "Current Project" -tx (pmCurrentProject()) -ed 0 pmUICTCurrProj;
+
+	textScrollList -ams 1 -parent mf pmUICTProjList;
+
+	columnLayout -adj 0 -cal "center" -cat "both" 0 -rs 0 -parent mf bl;
+
+	//txt("Project");
+	//sep();
+
+	bts("Project",1);
+	button -l "Set As Current" -c "pmUIButton(0)";
+	sep();
+	button -l "File Types..." -c "pmUIButton(12)";
+	button -l "Edit Current..." -c "pmUIButton(1)";
+	button -l "New Project..." -c "pmUIButton(2)";
+	bte();
+	
+	bts("Scene",1);
+	button -l "Open..." -c "projectViewer Open";
+	button -l "Save As..." -c "projectViewer SaveAs";
+	button -l "Save [+]" -c "pmIncrementalSave()";
+	bte();
+	
+	bts("Project Database",0);
+	button -l "Write" -c "pmUIButton(6)"; 
+	button -l "Reread" -c "pmUIButton(7)";
+	sep();
+	button -l "Add Project..." -c "pmUIButton(3)";
+	button -l "Add Current Proj." -c "pmUIButton(11)";
+	button -l "Remove Selected" -c "pmUIButton(4)";
+	button -l "Remove Invalid" -c "pmUIButton(5)";
+	bte();
+
+	bts("Tools",0);
+	button -l "Collect Textures..." -c "pmUIButton(14)" -en 0;
+	bte();
+
+	bts("Manager",1);
+	button -l "Info..." -c "pmUIButton(8)";
+	button -l "About..." -c "pmUIButton(9)";
+	bte();
+
+	button -l "Close" -c "pmUIButton(10)" -parent mf cb;
+
+	formLayout -e
+		-attachForm il "top" 5
+		-attachForm il "left" 5
+		-attachForm il "right" 5
+		-attachNone il "bottom"
+
+		-attachForm cb "bottom" 1
+		-attachForm cb "left" 1
+		-attachForm cb "right" 1
+		-attachNone cb "top"
+
+		-attachControl bl "top" 5 il
+		-attachForm bl "right" 5
+		-attachControl bl "bottom" 5 cb
+		-attachNone bl "left"
+
+		-attachControl "pmUICTProjList" "top" 5 il
+		-attachForm "pmUICTProjList" "left" 5
+		-attachControl "pmUICTProjList" "bottom" 5 cb
+		-attachControl "pmUICTProjList" "right" 5 bl
+
+		mf;
+
+	pmReadProjList(pmListFile());
+	pmUIRefreshScrollList();
+
+	showWindow;
+}
+
+//
+// *** pmUIButton ***
+//
+//  Main window button press actions.
+//
+// 0: set as current project
+// 1: edit current project
+// 2: new project
+// 11: add current project to list
+// 3: add project to project list
+// 4: remove selected projects from list
+// 5: remove invalid projects from list
+// 6: write current project list to the database
+// 7: read project list from database
+// 8: general info
+// 9: about
+// 10: write project list and exit
+// 11: add current project to database/list
+// 12: display project file rules
+// 14: collect file textures
+//
+//
+// todo:
+//
+//  edit list file (NT: notepad, IRIX: jot)
+//  explore selected project (NT)
+//
+//
+
+global proc pmUIButton( int $action )
+{
+	global string $pmUIProjList[];
+	global int $gv_browserMode;
+
+	if (`window -exists pmUICTManagerWindow`)
+	{
+		int $sel[]=`textScrollList -q -sii pmUICTProjList`;
+		int $selsz=size($sel);
+
+		switch ($action)
+		{
+			case 0: // set as current project
+			{
+				if ($selsz>0)
+				{
+					pmSetWorkspace($pmUIProjList[$sel[0]-1]);
+					textFieldGrp -e -tx (pmCurrentProject()) pmUICTCurrProj;
+				}
+				break;
+			}
+			case 1: // edit current project
+			{
+				projectSetup 2;
+				break;
+			}
+			case 2: // new project
+			{
+				projectSetup 1;
+				break;
+			}
+			case 3: // add project to list
+			{
+				string $p=pmFindWorkspace(`fileDialog -dm (pmCurrentProject()+"/workspace.mel")`);
+
+				if ( $p !="" )
+				{
+					pmProjectAdd(pmListFile(),$p);
+					pmReadProjList(pmListFile());
+					pmUIRefreshScrollList();
+				}
+				break;
+			}
+			case 4: // remove selected projects from list
+			{
+				int $i;
+
+				string $c=`confirmDialog -m "Remove selected projects from the database?\n(No project will be deleted from disk.)"
+						-ma "center" -b "Yes" -b "No" -db "Yes" -cb "No" -ds "No"`;
+
+				if ( ($c=="Yes") && ($selsz>0) )
+				{
+					for($i=0;$i<$selsz;$i++)
+						$pmUIProjList[$sel[$i]-1]="";
+
+					pmWriteProjList(pmListFile());
+					pmReadProjList(pmListFile());
+					pmUIRefreshScrollList();
+				}
+				break;
+			}
+			case 5: // remove invalid projects from list
+			{
+				string $c=`confirmDialog -m "This will remove all unexisting/invalid projects from the database.\nProceed with operation?"
+						-ma "center" -b "Yes" -b "No" -db "Yes" -cb "No" -ds "No"`;
+
+				int $i,$n=0;
+
+				if ($c=="Yes")
+				{
+					print("\nRemoving unexisting/invalid projects from project database...\n");
+
+					for($i=0;$i<size($pmUIProjList);$i++)
+					{
+						if (strcmp($pmUIProjList[$i],pmFindWorkspace($pmUIProjList[$i]))!=0)
+						{
+							print("Project '"+$pmUIProjList[$i]+"' removed.\n");
+							$pmUIProjList[$i]="";
+							$n++;
+						}
+					}
+					print("Done. Removed "+$n+" entries.\n");
+
+					pmWriteProjList(pmListFile());
+					pmReadProjList(pmListFile());
+					pmUIRefreshScrollList();
+
+					if ($n>0) confirmDialog -ma "center" -m ($n+" project entries was found to be invalid and removed.\nSee script editor for details.");
+				}
+
+				break;
+			}
+			case 6: // write current list to dbase
+			{
+				pmWriteProjList(pmListFile());
+				break;
+			}
+			case 7: // read current list from dbase
+			{
+				pmReadProjList(pmListFile());
+				pmUIRefreshScrollList();
+				break;
+			}
+			case 8: // general info
+			{
+				string $c="General Information\n\n";
+				
+				$c+=("Software: version "+`about -v`+" ("+`about -c`+") OS:"+`about -os`+"\n\n");
+
+				$c+=("User name: "+(size(pmGetUsername())>0?pmGetUsername():"<none>")+"\n\n");
+				$c+=("User application directory: "+`internalVar -uad`+"\n");
+				$c+=("Environment file: "+`about -env`+"\n\n");
+
+				$c+=("Project database: "+pmListFile()+"\n");
+				$c+=("Default project path: "+`internalVar -uwd`);
+
+				confirmDialog -ma "left" -m $c -b " Okido ";
+				break;
+			}
+			case 9: // about
+			{
+				string $b[3]={"How cool!","Fine stuff!","Thats nice!"};
+
+				string $c="Project Manager V0.28 (18-Feb-2002)\n\n\n";
+
+				$c+="The Softimage DB Manager for Maya ;-)\n";
+				$c+="(Maya 4.0 version)\n\n";
+				$c+="by Imre Tuske (tuske@pannonline.hu)\n";
+				$c+="Don't forget to drop me an e-mail!";
+
+				confirmDialog -ma "center" -m $c -b ("  "+$b[int(rand(3))]+"  ");
+
+				break;
+			}
+			case 10: // exit
+			{
+				pmWriteProjList(pmListFile());
+				deleteUI("pmUICTManagerWindow");
+				break;
+			}
+			case 11: // add current project to database/list
+			{
+				pmUIAddCurrentProject();
+				pmReadProjList(pmListFile());
+				pmUIRefreshScrollList();
+				break;
+			}
+
+			case 12: // project file rules
+			{
+				string $c="File Types and Directories:\n\n";
+
+				string $frl[]=`workspace -q -frl`, $r;
+				for($r in $frl) $c+=$r+" : "+(string)`workspace -q -fre $r`+"/ \n";
+
+				confirmDialog -t "Workspace File Rules" -ma "left" -m $c -b " Albright ";
+				break;
+			}
+			
+			case 14: // collect file textures
+			{
+				break;
+			}
+			
+		}
+		
+//		Bazhutkin's adds
+		addRecentProject `workspace -q -rd`;
+	}
+}
+
+// -------------------------------------------------------------------------------------------
+
+//
+// *** ScriptJob Events Procedures/Variables ***
+//
+
+// Variables
+
+global int $pmSJobs[3];
+
+// New Scene (NewSceneOpened)
+
+global proc pmSJNewSceneOpened()
+{
+	pmUIAddCurrentProject();
+
+	// ide johet majd egy project selection UI
+}
+
+// Open Scene (SceneOpened)
+
+global proc pmSJSceneOpened()
+{
+	string $current=pmCurrentProject();						// current project
+	string $opened=pmFindWorkspace(`file -q -sceneName`);	// project of the opened file
+
+	if ( (strcmp(tolower($current),tolower($opened))!=0) && ($opened!="") )
+	{
+		// ask if the user want to change project
+
+		string $c=`confirmDialog -m ("You opened a scene from a different project than the current one.\nChange current project\nfrom '"+$current+"'\nto '"+$opened+"'?")
+				-ma "center" -b "Yes" -b "No" -db "Yes" -cb "No" -ds "No"`;
+
+		if ($c=="Yes")
+		{
+			pmSetWorkspace($opened);
+			pmUIRefreshScrollList();
+
+//			Bazhutkin's adds
+			addRecentProject `workspace -q -rd`;
+		}
+	}
+	pmUIAddCurrentProject();
+	
+}
+
+// Quit (quitApplication)
+
+global proc pmSJquitApplication()
+{
+	pmUIAddCurrentProject();
+}
+
+//
+// *** pmInstallScriptJobs ***
+//
+//  Installs the Project Manager ScriptJob functions.
+//  (Also installs the extra incremental save menu items).
+//
+global proc pmInstallScriptJobs()
+{
+	global int $pmSJobs[];
+	global string $gMainFileMenu;
+
+	// install script jobs
+	$pmSJobs[0]=`scriptJob -e "NewSceneOpened" pmSJNewSceneOpened`;
+	$pmSJobs[1]=`scriptJob -e "SceneOpened" pmSJSceneOpened`;
+	$pmSJobs[2]=`scriptJob -e "quitApplication" pmSJquitApplication`;
+
+	// install incremental save menu items
+	
+	if (`menu -ex $gMainFileMenu`)
+//	if (0)
+	{
+/*		
+		setParent -m ($gMainFileMenu);
+			menuItem -l "Save Scene [+]" -ia "saveAsOptions" -c ("pmIncrementalSave()")
+				-ann "Save Scene (with incremental version numbering)"
+				pmui_IncrementalSave;
+			menuItem -d on -ia "pmui_IncrementalSave" pmui_Divider;
+*/
+//		Bazhutkin's adds
+
+//	string $cmd=" setParent -m projectItems; 	menuItem -label \"Manager...\"-annotation \"Project Manager: Change the current project\" 	-command \"pmUIManagerWindow\" pmui_ProjectManager;";
+//	evalDeferred $cmd;
+	}
+}
+
+global proc pmUninstallScriptJobs()
+{
+	global int $pmSJobs[];
+	global string $gMainFileMenu;
+
+	// uninstall script jobs
+
+	int $i;
+	for($i=0;$i<size($pmSJobs);$i++) 
+	{
+		scriptJob -kill ($pmSJobs[$i]);
+		$pmSJobs[$i]=0;
+	}
+
+	// uninstall incremental save menu items
+
+	if (`menu -ex $gMainFileMenu`)
+	{
+		setParent -m $gMainFileMenu;
+		if (`menuItem -ex "pmui_IncrementalSave"`) deleteUI("pmui_IncrementalSave");
+		if (`menuItem -ex "pmui_Divider"`) deleteUI("pmui_Divider");
+		
+//		Bazhutkin's adds
+		if (`menuItem -ex "pmui_ProjectManager"`) deleteUI("pmui_ProjectManager");
+	}
+}
+
+// -------------------------------------------------------------------------------------------
+
+//
+// *** setProject ***
+//
+//  Replacement for the "Project->Set..." menu item.
+//
+/*  Bazhutkin's comments
+
+global proc setProject( string $dummy )
+{
+	pmUIManagerWindow();
+}
+*/	
+
+// ...
+
+if (`exists "xxRegister"`) xxRegister("projMan`0.27`4.0`999` ` ` ` `Enhanced Project Management functions");
+

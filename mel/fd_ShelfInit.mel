@@ -1,0 +1,45 @@
+// ATTENTION:
+// 
+// Автор: Скнарин
+// Если вы правите этот файл, необходимо сказать об этом мне
+// Иначе ваши изменения могут потеряться!!!!!
+//
+/*
+global proc string locScriptPath ( string $MELproc )
+{
+	string $path;
+	string $MELfile;
+	string $whatIsResult = `whatIs $MELproc`;
+	string $whatIsHack[];
+	tokenize $whatIsResult $whatIsHack;
+	
+	if (size($whatIsHack) > 1)
+	{
+		$MELfile = $whatIsHack[(size($whatIsHack) - 1)];
+		$path = dirname($MELfile);
+	}
+	
+	return $path;
+}
+*/
+global proc fd_ShelfInit()
+{
+	if (`shelfLayout -exists "FilmDirection"`)
+	{
+		fd_deleteShelfTab "FilmDirection";
+	}
+	if (!`shelfLayout -exists "FilmDirection"`)
+	{
+		string $curPath = `locScriptPath "fd_ShelfInit"`;
+		
+		if ($curPath != ""){
+			$curPath = $curPath+"/shelf_FilmDirection.mel";
+			loadNewShelf($curPath);
+		}
+	}
+}
+
+
+
+
+

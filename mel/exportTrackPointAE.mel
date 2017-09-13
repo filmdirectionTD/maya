@@ -1,0 +1,84 @@
+// Copyright (C) 2000-2006 Michael Bazhutkin
+// www.geocites.com/bazhutkin
+// bazhutkin@mail.ru
+//
+//  exportTrackPoint 1.0
+//  Script File
+//  MODIFY THIS AT YOUR OWN RISK
+//
+//  Creation Date:  November 18, 2005
+//
+//
+//  Description:
+//	Export trackPoint information for Afer Effects program
+//	Select trackPoint locator and call script
+
+global proc exportTrackAE ( )
+{
+
+	string $pointNameList[] = `ls -sl`;
+	int $pointCount = size($pointNameList);
+	string $pointName;
+	
+	float $minFrame = `playbackOptions -q -min`;
+	float $maxFrame = `playbackOptions -q -max`;
+	float $sceneTime = `currentTime -q`;
+	string $arrayPoints[];
+	
+	for ( $j = 0; $j < $pointCount; $j++ ) 
+		$arrayPoints[$j] =	"Adobe After Effects 6.5 Keyframe Data\n\n" +
+							"\tUnits Per Second\t25\n" +
+							"\tSource Width\t100\n" +
+							"\tSource Height\t100\n" +
+							"\tSource Pixel Aspect Ratio\t1\n" +
+							"\tComp Pixel Aspect Ratio\t1\n\n" +
+							"Position\n" +
+							"\tFrame\tX pixels\tY pixels\tZ pixels\n";
+	
+	for ( $i = $minFrame; $i <= $maxFrame; $i++ )
+	{
+		currentTime $i;
+	
+		for ( $j = 0; $j < $pointCount; $j++ )
+		{
+			$pointName = $pointNameList[$j];
+	
+			float $pointX = `getAttr ($pointName + ".pointX")`;
+			float $pointY = `getAttr ($pointName + ".pointY")`;
+			$pointX = trunc($pointX * 100) / 100;
+			$pointY = trunc($pointY * 100) / 100;
+	
+			$arrayPoints[$j] = 	$arrayPoints[$j] + "\t" +
+							int($i) + "\t" + $pointX + "\t" + $pointY + "\t" + "0\n";
+		}
+	}
+	
+	for ( $j = 0; $j < $pointCount; $j++ )
+		$arrayPoints[$j] = $arrayPoints[$j] + "\n\nEnd of Keyframe Data";
+	
+	currentTime $sceneTime;
+	
+	$window = `window -width 400 -t "Track Point for Adobe After Effects"`;
+		$form = `formLayout`;
+			$sf = `scrollField -ww true -editable false -text $arrayPoints`;
+		formLayout -edit	-attachForm $sf "top" 5
+							-attachForm $sf "left" 5
+							-attachForm $sf "right" 5
+							-attachForm $sf "bottom" 5
+							$form;
+	showWindow $window;
+
+}
+
+global proc exportTrackPointAE ( )
+{
+
+	string $pointNameList[] = `ls -sl`;
+		
+	if (size($pointNameList) < 1)
+	{	error("Select trackPoint locators");
+		return;
+	}
+	
+	exportTrackAE;
+}

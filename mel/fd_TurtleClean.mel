@@ -1,0 +1,43 @@
+global proc fd_TurtleClean()
+{
+	// Clean Scene from TurtleBakeLayerManager
+	if(`objExists TurtleBakeLayerManager`)
+	{
+		lockNode -lock off TurtleBakeLayerManager;
+		delete TurtleBakeLayerManager;
+	}else
+	{
+		print "TurtleBakeLayerManager node already has been deleted\n";
+	}
+	// Clean Scene from TurtleDefaultBakeLayer
+	if(`objExists TurtleDefaultBakeLayer`)
+	{
+		lockNode -lock off TurtleDefaultBakeLayer;
+		delete TurtleDefaultBakeLayer;
+		
+	}else
+	{
+		print "TurtleDefaultBakeLayer node already has been deleted\n";
+	}
+	// Clean Scene from TurtleRenderOptions
+	if(`objExists TurtleRenderOptions`)
+	{
+		lockNode -lock off TurtleRenderOptions;
+		delete TurtleRenderOptions;
+		
+	}else
+	{
+		print "TurtleRenderOptions node already has been deleted\n";
+	}
+	// Clean Scene from TurtleUIOptions
+	if(`objExists TurtleUIOptions`)
+	{
+		lockNode -lock off TurtleUIOptions;
+		delete TurtleUIOptions;
+		
+	}else
+	{
+		print "TurtleUIOptions node already has been deleted\n";
+	}
+
+}

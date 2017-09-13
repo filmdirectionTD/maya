@@ -1,0 +1,59 @@
+//moveCenterToVertex command
+if(`runTimeCommand -q -exists moveCenterToVertex_rtc`) runTimeCommand -e -delete moveCenterToVertex_rtc;
+
+runTimeCommand
+	-annotation "moveCenterToVertex"
+	-category "ulitka"
+	-command ("as_MoveCenterToVertex")
+	moveCenterToVertex_rtc;
+
+nameCommand
+	-annotation "moveCenterToVertexNameCommand"
+	-command ("moveCenterToVertex_rtc")
+	moveCenterToVertexNameCommand; 
+
+//LocatorToVertex command
+if(`runTimeCommand -q -exists locatorToVertex_rtc`) runTimeCommand -e -delete locatorToVertex_rtc;
+
+runTimeCommand
+	-annotation "locatorToVertex"
+	-category "ulitka"
+	-command ("as_LocatorToVertex")
+	locatorToVertex_rtc;
+
+nameCommand
+	-annotation "locatorToVertex_rtcNameCommand"
+	-command ("locatorToVertex_rtc")
+	locatorToVertex_rtcNameCommand; 
+	
+//
+if(`runTimeCommand -q -exists ulLiveEdit_rtc`) runTimeCommand -e -delete ulLiveEdit_rtc;
+
+runTimeCommand
+	-annotation "ul_LiveEdit"
+	-category "ulitka"
+	-command ("python (\"import as_Live_Edit\");python (\"as_Live_Edit.as_live_edit()\");")
+	ulLiveEdit_rtc;
+
+nameCommand
+	-annotation "ulLiveEdit_rtcNameCommand"
+	-command ("ulLiveEdit_rtc")
+	ulLiveEdit_rtcNameCommand;
+
+
+//
+if(`runTimeCommand -q -exists as_toggleSelWire_rtc`) runTimeCommand -e -delete as_toggleSelWire_rtc;
+
+runTimeCommand
+	-annotation "as_toggleSelWire"
+	-category "ulitka"
+	-command ("python (\"import as_toggleSelWire\");python (\"as_toggleSelWire.as_toggleSelWire()\");")
+	as_toggleSelWire_rtc;
+
+nameCommand
+	-annotation "as_toggleSelWire_rtcNameCommand"
+	-command ("as_toggleSelWire_rtc")
+	as_toggleSelWire_rtcNameCommand;
+	
+
+print ("ulitka runTime Commands Initialized\n");

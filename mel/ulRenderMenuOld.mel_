@@ -1,0 +1,625 @@
+// ATTENTION:
+// 
+// Автор: Робустов Д.А. ULITKA
+// Если вы правите этот файл, необходимо сказать об этом мне skype: robustov
+// Иначе ваши изменения могут потеряться!!!!!
+//
+
+// Процедуры:
+// ulSetRenderRezMenu
+// ulRenderMenu
+// ulRenderMenuPopup
+// FastRibJobStart
+// ulSetRenderDir
+// ulGetCurFrameCamera
+// ulRenderMainProc
+// ulRenderSpool
+// ulRenderCurFrame
+// ulRenderToIt
+// ulRenderViewRib
+
+
+source ulRenderPresets.mel;
+
+
+
+
+global proc ulRenderMenu()
+{
+	mtor control getvalue -sync;
+
+	menuItem -l "Render" -c "ulRenderSpool" -i pxrm.xpm -aob false;
+	menuItem -l "Render to it" -c "ulRenderToIt" -i pxrm.xpm -aob false;
+	menuItem -l "Render current frame" -c "ulRenderCurFrame" -i pxrm.xpm -aob false;
+	menuItem -l "View Rib" -c "ulRenderViewRib" -i pxrm.xpm -aob false;
+	menuItem -l "!Fast Rib Job Start!" -c "FastRibJobStart" -i pxrm.xpm -aob false;
+	menuItem -l "Render List of Frames ..." -c " ulRenderFrameList()" -aob false;
+	menuItem -divider true;
+	
+	menuItem -l "Alfred For Maya" -c "az_alfredForMaya_GUI" -aob false;
+	menuItem -divider true;
+	
+	// rezolution
+	{
+		string $Rezs =" \
+						2048 1556 2k_(2048x1556) \
+						1920 1080 1080p_(1920x1080) \
+						1024 778  1k_(1024x778) \
+						800  600  800x600_(just_800x600) \
+						768  576  PAL_sq_(768x576_1.0) \
+						640  480  PC_(640x480) \
+						320  240  PC_half_(320x240) \
+						8	 6    8x6_(maybe_you_need_it_(:-) \
+						";
+
+
+
+		
+		ulSetRenderRezMenu ($Rezs);
+	}
+		
+	// camera
+	// preset
+	{
+//		string $ShowMenu = `menuItem -l "Presets" -sm true`;
+			
+		menuItem -divider true;
+		ulRenderPresets_Menu();
+//		setParent -m ..;
+			
+			
+	}
+
+	{
+			
+		menuItem -divider true;
+//		ulExtraOptions_Menu();
+		
+		menuItem -l "Set Mtor Extra Options ..." -c "ulMtorExtraOptions()" -aob false;
+	}
+	
+	// view data
+	{
+		menuItem -divider true;
+		string $projectDir = `slimcmd workspace GetRootDir`;
+		string $imgDir = `slimcmd workspace GetDir torImgs`;
+		string $ribDir = `slimcmd workspace GetDir torRIBs`;
+		string $shadersDir = `slimcmd workspace GetDir torShaders`;
+		string $prsDir = "rpresets";
+
+		string $sceneDir = `file -q -location`;
+		$sceneDir = ulExtractDirectory($sceneDir);
+	
+		string $cmd = "system \"start explorer "+$sceneDir+"\"";
+		$cmd = `substituteAllString $cmd "/" "\\\\"`;
+		menuItem -l ("Scene dir: "+$sceneDir) -c $cmd -aob false;
+	
+		string $cmd = "system \"start explorer "+$projectDir+$imgDir+"\"";
+		$cmd = `substituteAllString $cmd "/" "\\\\"`;
+		menuItem -l ("Render dir: "+$imgDir) -c $cmd -aob false;
+
+		$cmd = "system \"start explorer "+$projectDir+$ribDir+"\"";
+		$cmd = `substituteAllString $cmd "/" "\\\\"`;
+		menuItem -l ("Rib dir: "+$ribDir) -c $cmd -aob false;
+
+		$cmd = "system \"start explorer "+$projectDir+$prsDir+"\"";
+		$cmd = `substituteAllString $cmd "/" "\\\\"`;
+		menuItem -l ("Preset dir: "+$prsDir) -c $cmd -aob false;
+		
+		$cmd = "system \"start explorer "+$projectDir+$shadersDir+"\"";
+		$cmd = `substituteAllString $cmd "/" "\\\\"`;
+		menuItem -l ("Shader dir: "+$shadersDir) -c $cmd -aob false;
+		
+	}
+
+	menuItem -divider true;
+	{
+		$cmd = "showHelp -absolute \"http://www.ulitkapost.ru/wakka/InhouseDev/UlMenu\"";
+		menuItem -l ("Help...") -c $cmd -aob false;
+		
+	}
+}
+global proc ulRenderMenuPopup(string $palMenu)
+{
+    setParent -menu $palMenu;
+    string $items[] = `menu -query -ia $palMenu`;
+    for ($item in $items)
+    {
+		deleteUI $item;
+    }
+
+	ulRenderMenu();
+}
+
+global proc FastRibJobStart()
+{
+	mtor control getvalue -sync;
+	
+	ulSetRenderDir;
+	if(`exists "Hair_PrepareHairCache"`) 
+	{
+		eval( "Hair_PrepareHairCache");
+	}
+	
+	string $RIBGen = `mtor control getvalue -rg "RIBGen"`;
+	string $computeLocation = `mtor control getvalue -rg "computeLocation"`;
+	
+
+	string $startFrame = `mtor control getvalue -rg "computeStart"`;
+	string $endFrame   = `mtor control getvalue -rg "computeStop"`;
+	string $joboptions = `mtor control getvalue -rg "alfJobOptions"`;
+	$joboptions = `substituteAllString $joboptions "{" ""`;
+	$joboptions = `substituteAllString $joboptions "}" ""`;
+
+	string $wsfile = `slimcmd workspace CreateTempWSFile`;
+	string $wsroot = `slimcmd workspace GetRootDir`;
+
+	string $scene = $wsfile + ".mb";
+
+	string $prev = ulFixDisplayName();
+
+	mtor control setvalue -rg "RIBGen" -value "immediate";
+	mtor control setvalue -rg "computeLocation" -value "remote";
+
+	string $lastname = `file -q -sn`;
+	file -rename $scene; 
+	file -save -type "mayaBinary";
+	file -rename $lastname; 
+	
+	mtor control setvalue -rg "RIBGen" -value $RIBGen;
+	mtor control setvalue -rg "computeLocation" -value $computeLocation;
+	ulRevertDisplayName($prev);
+
+	string $st = "ulmtor -superjob "+$scene+" "+$wsroot+" "+$wsfile+" "+$startFrame+" "+$endFrame+" "+$joboptions;
+	print ($st+"\n");
+	system("start "+ $st);
+}
+
+global proc ulSetRenderDir()
+{
+	mtor control getvalue -sync;
+
+	string $projectDir = `slimcmd workspace GetRootDir`;
+	string $imgDir = `workspace -q -rte images`;
+	if($imgDir=="") $imgDir = "rmanpix";
+	string $ribDir = `workspace -q -rte rib`;
+	if( $ribDir=="") $ribDir = "rib";
+	string $torShadows  = `workspace -q -rte shadows`;
+	if($torShadows=="") $torShadows = "rmantex/shd";
+	string $displayName = `mtor control getvalue -rg "dspyName"`;
+	string $displayServer = `mtor control getvalue -rg "dspyServer"`;
+	string $renderer = `mtor control getvalue -rg "renderer"`;
+
+	$displayName = substituteAllString($displayName, "\\", "/");
+
+	string $scname = ulSceneName();
+//	$displayName = substituteAllString($displayName, "$SCENE", $scname);
+	$displayName = `substitute "#SCENE" $displayName $scname`;
+
+	if ( $displayName == "untitled" || $displayServer == "it" || $renderer == "custom" )
+	{
+		slimcmd workspace SetDir torImgs $imgDir;
+		slimcmd workspace SetDir torShadows $torShadows;
+		slimcmd workspace SetDir torRIBs $ribDir;
+
+		print ("set image folder  \""+$imgDir+"\".\n");
+		print ("set shadow folder \""+$torShadows+"\".\n");
+		print ("set rib folder    \""+$ribDir+"\".\n");
+	}
+	else 
+	{
+		string $imgDirNew = $imgDir + "/" + $displayName;
+		string $imgDirNewPrint = $imgDir + "\\" + $displayName;
+		if (!`filetest -d ($projectDir+$imgDirNew)`)
+		{
+			sysFile -makeDir ($projectDir+$imgDirNew);
+			print ("folder \""+$imgDirNewPrint+"\" created.\n");
+		}
+		slimcmd workspace SetDir torImgs $imgDirNew;
+
+		string $shdDirNew = $torShadows + "/" + $displayName;
+		string $shdDirNewPrint = $torShadows + "\\" + $displayName;
+		if (!`filetest -d ($projectDir+$shdDirNew)`)
+		{
+			sysFile -makeDir ($projectDir+$shdDirNew);
+			print ("folder \""+$shdDirNewPrint+"\" created.\n");
+		}
+		slimcmd workspace SetDir torShadows $shdDirNew;
+
+		string $ribDirNew = $ribDir + "/" + $displayName;
+		string $ribDirNewPrint = $ribDir + "\\" + $displayName;
+		if (!`filetest -d ($projectDir+$ribDirNew)`)
+		{
+			sysFile -makeDir ($projectDir+$ribDirNew);
+			print ("folder \""+$ribDirNewPrint+"\" created.\n");
+		}
+		slimcmd workspace SetDir torRIBs $ribDirNew;
+
+		print ("set image folder  \""+$imgDirNewPrint+"\".\n");
+		print ("set shadow folder \""+$shdDirNewPrint+"\".\n");
+		print ("set rib folder    \""+$ribDirNewPrint+"\".\n");
+	}
+}
+
+// вернет старый DisplayName который после отправки на рендер надо передать в ulRevertDisplayName
+global proc string ulFixDisplayName()
+{
+	mtor control getvalue -sync;
+	string $displayName = `mtor control getvalue -rg "dspyName"`;
+	
+	$displayName = substituteAllString($displayName, "\\", "/");
+	
+	string $ndn = ulExtractFileName($displayName);
+
+	string $scname = ulSceneName();
+	string $ndn2 = `substitute "#SCENE" $ndn $scname`;
+//	string $ndn2 = substituteAllString($ndn, "$SCENE", $scname);
+	
+//	$ndn2 += ".";
+	mtor control setvalue -rg "dspyName" -value $ndn2;
+	
+	return $displayName;
+}
+global proc ulRevertDisplayName(string $displayName)
+{
+	mtor control setvalue -rg "dspyName" -value $displayName;
+	
+	mtor control getvalue -sync;
+}
+
+global proc string ulGetCurFrameCamera(int $message)
+{
+		int $isModPan = 0;
+		string $curPanel = `getPanel -wf`;
+		string $modPanels[] = `getPanel -typ "modelPanel"`;
+		for ($iter in $modPanels){
+			if ($iter == $curPanel) $isModPan = 1;
+		}
+		string $curCamShape = "";
+		if ($isModPan) {
+			$curCamShape = `modelEditor -q -cam $curPanel`;
+		} else {
+			if ($message == 1) warning "you must select camera view"; 
+			return "";
+		}
+		string $tmp[] = `ls -ca $curCamShape`;
+		if ($tmp[0] == ""){
+			$tmp = `listRelatives  -c $curCamShape`;
+			$curCamShape = $tmp[0];
+		}
+		return $curCamShape;
+}
+
+global proc ulRenderMainProc()
+{
+	float $time = `currentTime -query`;
+	mtor control getvalue -sync;
+	ulSetRenderDir;
+
+
+// temp - update puning scale
+/*	{
+		string $shapes[] = `ls -s -st`;
+		string $s;
+		for ($s in $shapes) 
+			if ($s == "HairShape"){
+				string $camShape = `mtor control getvalue -rg "camName"`;
+				float $focalLength = `getAttr ($camShape+".focalLength")`;
+
+
+				string $hairs[] = `ls -typ HairShape`; 
+				for ($hair in $hairs){
+					 if (`attributeExists "pruningScaleFactor" $hair`) setAttr ($hair+".pruningScaleFactor") ($focalLength/35.0);
+				}
+				print ("pruning scale is: "+($focalLength/35.0)+ "\t") ;
+				break;
+			}
+	}
+*/
+// end update puning scale
+
+
+	if(`exists "Hair_PrepareHairCache"`) 
+	{
+		eval( "Hair_PrepareHairCache");
+	}
+	
+	string $prev = ulFixDisplayName();
+	mtor RenderSpool;
+	ulRevertDisplayName($prev);
+	
+	if(`exists "ulOfficeCmd"`) 
+	{
+		eval( "ulOfficeCmd -c renderPrman");
+	}
+	
+	currentTime -e $time;
+}
+
+global proc ulRenderSpool()
+{
+    ulRenderMainProc;
+    global string $gulShelfButton_Render;
+	shelfButton -e -annotation "RenderSpool" -command ulRenderSpool $gulShelfButton_Render ;
+}
+global proc ulRenderCurFrame()
+{
+	string $curCamShape = ulGetCurFrameCamera(1);
+
+	mtor control getvalue -sync;
+	
+	string $oldCam = `mtor control getvalue -rg "camName"`;
+	mtor control setvalue -rg "camName" -value $curCamShape;
+
+	ulRenderMainProc;
+
+	mtor control setvalue -rg "camName" -value $oldCam;
+
+    global string $gulShelfButton_Render;
+	shelfButton -e -annotation "RenderCurrentFrame" -command ulRenderCurFrame $gulShelfButton_Render;
+}
+global proc ulRenderToIt()
+{
+	mtor control getvalue -sync;
+
+	string $displayServer = `mtor control getvalue -rg "dspyServer"`;
+	string $doAnim = `mtor control getvalue -rg "doAnim"`;
+	string $dspyPrimaryOnly = `mtor control getvalue -rg "dspyPrimaryOnly"`;
+	
+	string $dspyServerMode		= `mtor control getvalue -rg "dspyServerMode"`;	
+	string $dspyQuantizeMode	= `mtor control getvalue -rg "dspyQuantizeMode"`;	
+	string $dspyQuantizeOne		= `mtor control getvalue -rg "dspyQuantizeOne"`;
+	string $dspyQuantizeMin		= `mtor control getvalue -rg "dspyQuantizeMin"`;
+	string $dspyQuantizeMax		= `mtor control getvalue -rg "dspyQuantizeMax"`;
+	string $dspyQuantizeDither	= `mtor control getvalue -rg "dspyQuantizeDither"`;
+    string $jobChunkSize		= `mtor control getvalue -rg "jobChunkSize"`; 
+    string $RIBGen				= `mtor control getvalue -rg "RIBGen"`; 
+
+	mtor control setvalue -rg "dspyServer"			-value "it";
+	mtor control setvalue -rg "doAnim"				-value "0";
+	mtor control setvalue -rg "dspyPrimaryOnly"		-value "1";
+	mtor control setvalue -rg "dspyServerMode"		-value "rgba";
+	mtor control setvalue -rg "dspyQuantizeMode"	-value "rgba";
+	mtor control setvalue -rg "dspyQuantizeOne"		-value "255";
+	mtor control setvalue -rg "dspyQuantizeMin"		-value "0";
+	mtor control setvalue -rg "dspyQuantizeMax"		-value "255";
+	mtor control setvalue -rg "dspyQuantizeDither"	-value "0.5";
+	mtor control setvalue -rg "jobChunkSize"		-value "subframe";
+	mtor control setvalue -rg "RIBGen"				-value "immediate";
+	
+	ulRenderMainProc;
+
+	mtor control setvalue -rg "dspyServer"			-value $displayServer;
+	mtor control setvalue -rg "doAnim"				-value $doAnim;
+	mtor control setvalue -rg "dspyPrimaryOnly"		-value $dspyPrimaryOnly;
+	mtor control setvalue -rg "dspyServerMode" 		-value $dspyServerMode;		
+	mtor control setvalue -rg "dspyQuantizeMode" 	-value $dspyQuantizeMode;	
+	mtor control setvalue -rg "dspyQuantizeOne" 	-value $dspyQuantizeOne;	
+	mtor control setvalue -rg "dspyQuantizeMin" 	-value $dspyQuantizeMin;
+	mtor control setvalue -rg "dspyQuantizeMax" 	-value $dspyQuantizeMax;	
+	mtor control setvalue -rg "dspyQuantizeDither" 	-value $dspyQuantizeDither;
+	mtor control setvalue -rg "jobChunkSize"		-value $jobChunkSize;
+	mtor control setvalue -rg "RIBGen"				-value $RIBGen;
+	
+    global string $gulShelfButton_Render;
+	shelfButton -e -annotation "RenderToIt" -command ulRenderToIt $gulShelfButton_Render;
+	
+}
+global proc ulRenderViewRib()
+{
+	mtor control getvalue -sync;
+	
+	string $displayServer = `mtor control getvalue -rg "renderer"`;
+	string $doAnim = `mtor control getvalue -rg "doAnim"`;
+	string $RIBFormat = `mtor control getvalue -rg "RIBFormat"`;
+	mtor control setvalue -rg "renderer" -value "custom";
+	mtor control setvalue -rg "doAnim" -value "0";
+	mtor control setvalue -rg "RIBFormat" -value "ascii";
+
+	ulRenderMainProc;
+
+	mtor control setvalue -rg "renderer" -value $displayServer;
+	mtor control setvalue -rg "doAnim" -value $doAnim;
+	mtor control setvalue -rg "RIBFormat" -value $RIBFormat;
+
+    global string $gulShelfButton_Render;
+	shelfButton -e -annotation "RenderViewRib" -command ulRenderViewRib $gulShelfButton_Render;
+}
+
+global proc ulAlfJobOptions_SetDbl(string $name, int $x, int $y, int $nonX, int $nonY ) // set option $name with $x and $y vals if vals not equal $nonX or $nonY
+{
+	
+	global string $ulMtorExtraJobOptions[];
+	
+	mtor control getvalue -sync;
+
+	string $oldAlfJobOptions = `mtor control getvalue -rg "alfJobOptions"`;
+	string $as[];
+	string $cs;
+	$numTokens = `tokenize $oldAlfJobOptions "-" $as`;
+	$ulMtorExtraJobOptions = $as;
+	string $newAlfJobOptions = "";
+	int $flag = 1;
+	
+	for ($cs in $as){
+		if (strip(match ("^[A-z]+", $cs)) == strip($name))
+		{
+			if ($x != $nonX && $y!=$nonX) $newAlfJobOptions += "-"+strip($name)+" {"+$x+" "+$y+"} ";
+			$flag = 0;
+		} else {
+			if (strip($cs)!="")$newAlfJobOptions += "-"+strip($cs)+" ";
+		}
+		
+	}
+	if ($flag!=0 && ($x != $nonX && $y!=$nonX)) $newAlfJobOptions += "-"+strip($name)+" {"+$x+" "+$y+"} ";
+	ulSetMtorValue alfJobOptions $newAlfJobOptions ;
+
+}
+
+global proc  ulMtorExtraOptions()
+{
+
+	global string $ulMtorExtraJobOptions[];
+	
+	mtor control getvalue -sync;
+
+	string $oldAlfJobOptions = `mtor control getvalue -rg "alfJobOptions"`;
+	string $as[];
+	string $cs;
+	$numTokens = `tokenize $oldAlfJobOptions "-" $as`;
+	$ulMtorExtraJobOptions = $as;
+	string $newAlfJobOptions = "";
+	string $cropVal[];
+	string $nrshdVal[];
+
+
+	for ($cs in $ulMtorExtraJobOptions){
+		if (match ("^[A-z]+", $cs) == "crop")
+		{
+			int $index = 0;
+			$numTokens = `tokenize $cs " " $as`;
+				for ($s in $as){
+					$tmp = `match "[0-9]+" $s`;
+					if ($tmp!= ""){
+						$cropVal[$index] = $tmp;
+						++$index;
+					}
+					if ($index == 2) break;
+				}
+		}
+		if (match ("^[A-z]+", $cs) == "nrshd")
+		{
+			int $index = 0;
+			$numTokens = `tokenize $cs " " $as`;
+				for ($s in $as){
+					$tmp = `match "[0-9]+" $s`;
+					if ($tmp!= ""){
+						$nrshdVal[$index] = $tmp;
+						++$index;
+					}
+					if ($index == 2) break;
+				}
+		}
+	}
+
+
+	if (`window -q -ex MtorExtraJobOptionsWin`) deleteUI MtorExtraJobOptionsWin;
+
+	if (!`window -q -ex MtorExtraJobOptionsWin`)
+	{
+	//	deleteUI MtorExtraJobOptionsWin;
+		if (`windowPref -q -ex MtorExtraJobOptionsWin`)
+			windowPref -e -wh 250 150 MtorExtraJobOptionsWin;
+
+		window -title "Extra MTOR Option" -ret -wh 250 150 MtorExtraJobOptionsWin;
+
+		columnLayout -adj 1;
+		formLayout -nd 300 MtorExtraJobOptionsForm;
+
+
+
+		text -l "crop" cropText;
+		text -l "shadow netrender" nrshText;
+		textField -tx (string (size($cropVal)<2 ? 0 : $cropVal[0])) -h 25 cropXField;
+		textField -tx (string (size($cropVal)<2 ? 0 : $cropVal[1])) -h 25 cropYField;
+		textField -tx (string (size($nrshdVal)<2 ? 0 : $nrshdVal[0])) -h 25 nrshMinField;
+		textField -tx (string (size($nrshdVal)<2 ? 0 : $nrshdVal[1])) -h 25 nrshMaxField;
+
+		button -l "Apply" -h 25 applyButton;
+		button -l "Close" -h 25 -c "deleteUI MtorExtraJobOptionsWin" CancelButton;
+
+		formLayout -e
+			-af cropText top 5
+			-af cropText left 5
+			-ac nrshText top 5 cropText
+			-af nrshText left 5
+			-ac cropXField left 5 cropText 
+			-ac cropYField left 5 cropXField 
+			-ac nrshMinField left 5 nrshText 
+			-ac nrshMinField top 5 cropText
+			-ac nrshMaxField left 5 nrshMinField 
+			-ac nrshMaxField top 5 cropText
+			-ac CancelButton top 5 nrshText 
+			-af CancelButton bottom 5 
+			-af CancelButton left 5
+			-aoc applyButton top 0 CancelButton 
+			-ac applyButton left 1 CancelButton
+			-af applyButton right 5
+			MtorExtraJobOptionsForm;
+
+		
+		$applyCommand = "ulAlfJobOptions_SetDbl (\"crop\", `textField -q -tx cropXField`,`textField -q -tx cropYField`, 0, 0) ; \
+							ulAlfJobOptions_SetDbl (\"nrshd\", `textField -q -tx nrshMinField`,`textField -q -tx nrshMaxField`, 0, 0) ;	";
+		
+
+		button -e -c $applyCommand applyButton;
+
+
+	} 
+	showWindow MtorExtraJobOptionsWin;
+
+//	deleteUI MtorExtraJobOptionsWin;
+
+
+/*
+	for ($cs in $as){
+		if (match ("^[A-z]+", $cs) != "crop")
+		$newAlfJobOptions += "-"+strip($cs)+" ";
+		
+	}
+
+*/
+//	ulSetMtorValue alfJobOptions $oldAlfJobOptions ;
+}
+
+global proc  ulRenderFrameList()
+{
+
+	global string $ulMtorRenderFrameList;
+	
+	mtor control getvalue -sync;
+
+	if (`window -q -ex RenderFrameListWin`) deleteUI RenderFrameListWin;
+
+	if (!`window -q -ex RenderFrameListWin`)
+	{
+		if (`windowPref -q -ex RenderFrameListWin`)
+			windowPref -e -wh 450 100 RenderFrameListWin;
+
+		window -title "Render List of Frames" -ret -wh 450 100 RenderFrameListWin;
+
+		columnLayout -adj 1;
+		formLayout -nd 440 RenderFrameListForm;
+
+
+
+		text -l "frames:" framesText;
+		textField -tx $ulMtorRenderFrameList -h 25 framesField;
+
+		button -l "Apply" -h 25 applyButton;
+		button -l "Close" -h 25 -c "$ulMtorRenderFrameList = `textField -q -tx framesField`; deleteUI RenderFrameListWin" CancelButton;
+
+		formLayout -e
+			-af framesText top 5
+			-af framesText left 5
+			-ac framesField left 5 framesText 
+			-af framesField top 5
+			-af framesField right 5
+			-ac CancelButton top 5 framesText 
+			-af CancelButton bottom 5 
+			-af CancelButton left 5
+			-aoc applyButton top 0 CancelButton 
+			-ac applyButton left 1 CancelButton
+			-af applyButton right 5
+			RenderFrameListForm;
+
+		
+		$applyCommand = " $ulMtorRenderFrameList = `textField -q -tx framesField`; eval \"source ulRenderFrameListDo.mel\"; ulRenderFrameListDo ($ulMtorRenderFrameList) ;  ";
+		
+
+		button -e -c $applyCommand applyButton;
+
+	} 
+	showWindow RenderFrameListWin;
+
+}

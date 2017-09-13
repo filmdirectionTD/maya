@@ -1,0 +1,96 @@
+// Copyright (C) 2000-2006 Michael Bazhutkin
+// www.geocites.com/bazhutkin
+// bazhutkin@mail.ru
+//
+//  exportTrackPoint 1.0
+//  Script File
+//  MODIFY THIS AT YOUR OWN RISK
+//
+//  Creation Date:  July 10, 2001
+//
+//
+//  Description:
+//	Export trackPoint information into file for Shake track program
+//	Select trackPoint locator and call script with file name or without name: exportTtrackPoint "d:\track.txt"
+
+global proc exportDialogShake ( )
+{
+	fileBrowser( "exportTrackFileShake", "Export", "Text", 1);
+}
+
+global proc exportTrackFileShake ( string $filename, string $fileType )
+{
+
+	string $pointNameList[] = `ls -sl`;
+	int $pointCount = size($pointNameList);
+	string $pointName;
+	
+	float $minFrame = `playbackOptions -q -min`;
+	float $maxFrame = `playbackOptions -q -max`;
+	float $sceneTime = `currentTime -q`;
+	string $spaceTab = "              ";
+	string $arrayPoints[];
+	
+	for ( $j = 0; $j < $pointCount; $j++ ) 
+		$arrayPoints[$j] =	"TrackName track1\r\n" +
+						"    Frame     X             Y             Correlation\r\n";
+	
+	for ( $i = $minFrame; $i <= $maxFrame; $i++ )
+	{
+		currentTime $i;
+	
+		for ( $j = 0; $j < $pointCount; $j++ )
+		{
+			$pointName = $pointNameList[$j];
+	
+			float $pointX = `getAttr ($pointName + ".pointX")`;
+			float $pointY = `getAttr ($pointName + ".pointY")`;
+			$pointX = trunc($pointX * 100) / 100;
+			$pointY = trunc($pointY * 100) / 100;
+	
+			$arrayPoints[$j] = 	$arrayPoints[$j] + "    " +
+							int($i) + ".00" + substring($spaceTab, 1, (7 - size(string($i)))) +
+							$pointX + substring($spaceTab, 1, (14 - size(string($pointX)))) +
+							$pointY + substring($spaceTab, 1, (14 - size(string($pointY)))) +
+							"1.000\r\n";
+		}
+	}
+	
+	currentTime $sceneTime;
+	
+	string $fname;
+	string $fnameArr[];
+	int $fileId;
+	
+	tokenize $filename "." $fnameArr;
+	
+	if ($pointCount == 1)
+	{	$fname = $filename;
+		$fileId = `fopen $fname "w"`;
+		fprint $fileId $arrayPoints[0];
+		fclose $fileId;
+	}
+	else for ( $j = 0; $j < $pointCount; $j++ )
+	{
+		$fname = $fnameArr[0] + string($j + 1) + "." + $fnameArr[1];
+		$fileId = `fopen $fname "w"`;
+		fprint $fileId $arrayPoints[$j];
+		fclose $fileId;
+	}
+}
+
+global proc exportTrackPointShake ( string $fileName )
+{
+
+	string $pointNameList[] = `ls -sl`;
+	string $pointName = $pointNameList[0];
+	
+	if (size($pointNameList) < 1)
+	{	error("Select trackPoint locators");
+		return;
+	}
+	
+	if ( $fileName == "" ) exportDialogShake;
+	else exportTrackFileShake ($fileName, "");
+
+}

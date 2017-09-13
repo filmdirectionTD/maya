@@ -1,0 +1,65 @@
+ /*** DOF ***/                  
+
+global proc ulAddDOFControls ()
+{
+
+	string $cameras[] = `ls -sl -dag -cameras`;
+
+	if (`size $cameras` == 0){
+		error "first select at least one camera";
+	}
+
+	for ($camS in $cameras){
+
+		/*Finding unique name */
+		$name = "startPoint";
+		$nameN = $name;
+		int $cntr = 1;
+		while ( size(ls ($nameN+"*")) > 0 && $cntr < 10000) 
+			{
+				$nameN = $name+$cntr; $cntr++;
+			}
+
+		string $camT = `firstParentOf $camS`;
+		$tmp = `spaceLocator -p 0 0 0 - n $nameN`;
+		$stPointT = $tmp[0];
+		$tmp = `ls - sl -s -dag $stPointT`;
+		$stPointS = $tmp[0];
+		$tmp = `spaceLocator -p 0 0 0 - n ($camT+"_DOFposition")`;
+		$endPointT = $tmp[0];
+		$tmp = `ls - sl -s -dag $endPointT`;
+		$endPointS = $tmp[0];
+		$dD = `distanceDimension -sp 0 0 0 -ep 0 0 0`;
+		parent $stPointT $camT;
+		parent (firstParentOf($dD)) $camT;
+		setAttr ($stPointT+".translateX") 0;
+		setAttr ($stPointT+".translateY") 0;
+		setAttr ($stPointT+".translateZ") 0;
+		setAttr ($stPointT+".rotateX") 0;
+		setAttr ($stPointT+".rotateY") 0;
+		setAttr ($stPointT+".rotateZ") 0;
+
+
+
+		if(`isConnected ($stPointS+".worldPosition[0]") ($dD+".startPoint")` == 0) connectAttr -f ($stPointS+".worldPosition[0]") ($dD+".startPoint");
+		if(`isConnected ($endPointS+".worldPosition[0]") ($dD+".endPoint")` == 0) connectAttr -f ($endPointS+".worldPosition[0]") ($dD+".endPoint");
+		//CBunlockAttr ($camS+".fStop");
+		//CBunlockAttr ($camS+".focusDistance");
+		//CBunlockAttr ($camS+".depthOfField");
+		setAttr -lock false ($camS+".fStop");
+		setAttr -lock false ($camS+".focusDistance");
+		setAttr -lock false ($camS+".depthOfField");
+		connectAttr -f ($dD+".distance") ($camS+".focusDistance");
+		setAttr ($camS+".depthOfField") 1;
+		hide $stPointT;
+		hide (`firstParentOf $dD`);
+
+		/*Adding world space corrector to fStop field */
+		if (! `attributeExists fStopMultiplier $camS`) addAttr -ln "fStopMultiplier" -at double $camS;
+		setAttr -e -keyable true ($camS+".fStopMultiplier");
+		setAttr ($camS+".fStopMultiplier") 1;
+		expression -s ($camS+".fStop = 5.6 * "+$camS+".fStopMultiplier;")  -o $camS -ae 1 -uc all ;
+
+	}
+
+}

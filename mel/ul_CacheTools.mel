@@ -1,0 +1,356 @@
+//-------------------------------------------------
+//   made by Alexander Sknarin
+//   witcher.lutojar@gmail.com
+//   procedures:
+//    -ul_CacheTools_UI             - Main control window
+//    -ul_importCaches              - deletes existing caches and imports new one
+//    -ul_exportCaches              - exports geometry caches for selected objects
+//    -ul_DeleteCurrentCaches       - deletes geometry cache from current selected objects
+//--auxiliary procedures:
+//    -ul_ChacheExistCheck          - returns "true" if current object has attached cache and "false" if not
+//(UP)-ul_FindChacheNodeName        - returns current obejct's cacheFile node name
+//    -ul_NamespaceExist            - returns "true" if current object has attached namespaces and "false" if not
+//    -ul_ConvertNamespace          - replace : with _
+//    -ul_CT_check_and_combinePath  - combine two strings with correct slashes
+
+
+//    22.06.2012
+//    update v1.01 - added checkBoxes:
+//                     - Add hold - If "ON" - Import button will add 10 frame hold to new cache file after import
+//                     - Clear    - If "ON" - Expot Button will delete all cache nodes After export 
+//                 - added procedure:
+//                     - ul_FindChacheNodeName
+
+
+global proc ul_CacheTools_UI()
+{
+//------------------------------------------------------------------------
+//---- ANNOTATIONS
+//------------------------------------------------------------------------
+string $ANNglobPath    = "Default folder to store all caches in project. In most cases DO NOT CHANGE IT!";
+string $ANNlocaPath    = "Folder to store cache for current Shot. USE SLASHES TO MAKE SUBFOLDERS. You can use both types of slashes.";
+string $ANNAddhold    = "If \"ON\" - Import button will add 10 frame hold to new cache file after import.";
+string $ANNClear       = "If \"ON\" - Expot Button will delete all cache nodes after export.";
+string $ANNKeepForm    = "If \"off\" - cache will be deleted and object will return to it's original form. If \"on\" - after deletion object will keep current shape.";
+string $ANNimportCache = "First select objects. Check \"Current cache Folder\". Push Import";
+string $ANNexportCache = "First select objects. Check \"Current cache Folder\". Push Export";
+string $ANNdeleteCache = "Deletes geometry cache from selected objects. Switch \"Keep Current Form\" if you want to keep current shape after deleting caches;";
+//------------------------------------------------------------------------
+//---- GUI Description
+//------------------------------------------------------------------------  
+  
+  string $ul_CT_window = `window -title "Ulitka Cache Tool"
+                         -iconName "UCT"
+                         -topEdge 512
+                         -leftEdge 512
+                         -widthHeight 411 237
+                         //-sizeable false
+                         -resizeToFitChildren true`;
+  columnLayout -adjustableColumn true;
+    rowLayout -numberOfColumns 2 -columnWidth2 132 380 -adjustableColumn2 2;
+      text -label " Global cache path" -ann $ANNglobPath;
+      string $ul_CT_globalCachePath = `textField -text "3D\\DATA\\cache\\geocache\\" -ann $ANNglobPath`;
+    setParent ..;
+    rowLayout -numberOfColumns 2 -columnWidth2 132 380 -adjustableColumn2 2;
+      text -label " Current cache folder" -ann $ANNlocaPath;
+      string $ul_CT_currentCacheFolder = `textField -text "SHOT\\version" -ann $ANNlocaPath`;
+    setParent ..;
+    rowLayout -numberOfColumns 3 -columnWidth3 132 132 132;
+      string $ul_CT_AddHold  = `checkBox -label "Add hold" -v 0 -ann $ANNAddhold`;
+      string $ul_CT_Clear    = `checkBox -label "Clear" -v 0 -ann $ANNClear`;
+      string $ul_CT_KeepForm = `checkBox -label "Keep Current Form" -v 0 -ann $ANNKeepForm`;
+    setParent ..;
+    rowLayout -numberOfColumns 3 -columnWidth3 132 132 132;
+      string $ul_CT_importButton = `button -label "Import caches" -c ("ul_importCaches(`textField -q -text "+$ul_CT_globalCachePath+"`,`textField -q -text "+$ul_CT_currentCacheFolder+"`,`checkBox -q -v "+$ul_CT_AddHold+"`);") -ann $ANNimportCache`;
+      string $ul_CT_exportButton = `button -label "Export caches" -c ("ul_exportCaches(`textField -q -text "+$ul_CT_globalCachePath+"`,`textField -q -text "+$ul_CT_currentCacheFolder+"`,`checkBox -q -v "+$ul_CT_Clear+"`);") -ann $ANNexportCache`;
+      string $ul_CT_deleteButton = `button -label "Delete caches" -c ("ul_DeleteCurrentCaches(`checkBox -q -v "+$ul_CT_KeepForm+"`);") -ann $ANNdeleteCache`;
+    setParent ..;
+    text -align "center" -label "\nNOTES:\nTool is working with selected objects - better to select in viewport.\nDelete construction history before importing caches.\nIMPORTANT:\nIf you generate caches from other software you HAVE TO use SHAPE NAMES\nto naming objets. If you have namespaces in Maya - in other software\nyou should replace all \":\" symbols with \"_\"(underscore).\n";
+  setParent ..;
+
+showWindow $ul_CT_window;
+}
+
+//------------------------------------------------------------------------
+//---- Import geometry cache for selected objects
+//------------------------------------------------------------------------
+global proc ul_importCaches(string $globalCachePath, string $currentCacheFolder, int $AddHold)
+{
+  $currentSelection = `ls -sl`;
+  for($currentObject in $currentSelection)
+  { 
+    select -r $currentObject;
+    if(ul_ChacheExistCheck($currentObject))
+	{
+	  ul_DeleteCurrentCaches(0);
+	}
+	
+	//get objname
+	string $ul_CTcached_objname = $currentObject;
+	
+	//get shape name
+	$ul_CTcached_ShapeList = `listRelatives -c $currentObject`;
+	string $ul_CTcached_ShapeName = $ul_CTcached_ShapeList[0];
+	
+	//get filemane
+	string $ul_CTcache_filename;
+	if(ul_NamespaceExist($ul_CTcached_ShapeName))
+	{
+	  $ul_CTcache_filename = ul_ConvertNamespace($ul_CTcached_ShapeName);
+	}else
+	{
+	  $ul_CTcache_filename = $ul_CTcached_ShapeName;
+	}
+	//get path
+	
+	string $inputPath = ul_CT_check_and_combinePath($globalCachePath, $currentCacheFolder, 0);
+	string $ul_CTcache_path = (`workspace -q -fullName` + "/" + $inputPath);
+	
+	//create Switch and add cacheFile
+	string $ul_CTswitch = createHistorySwitch($ul_CTcached_objname, false);
+	select -r $ul_CTcached_objname;
+	cacheFile -attachFile -fileName $ul_CTcache_filename -directory $ul_CTcache_path -ia ($ul_CTswitch+".inp[0]");
+	setAttr ($ul_CTswitch + ".playFromCache") true;
+
+	print (">>>Cache file "+$ul_CTcache_filename+" added to object " + $ul_CTcached_objname + "!!!\n");
+	
+	if($AddHold)
+	{
+	  string $CurrentCacheNode = ul_FindChacheNodeName($currentObject);
+	  setAttr ($CurrentCacheNode+".h") 10;
+	}
+	
+	
+  }
+}
+
+
+//------------------------------------------------------------------------
+//---- Export geometry cache for selected objects
+//------------------------------------------------------------------------
+global proc ul_exportCaches(string $globalCachePath, string $currentCacheFolder, int $Clear)
+{
+  $ul_CT_ObjectsArray = `ls -sl`;
+  
+  string $exportPath = ul_CT_check_and_combinePath($globalCachePath, $currentCacheFolder, 0);
+  $exportPath = (`workspace -q -fullName` + "/" + $exportPath);
+  
+  for($ul_CT_current_object in $ul_CT_ObjectsArray)
+  {
+    select $ul_CT_current_object;
+	doCreateGeometryCache 5 { 
+                             "2", 
+                             "1", 
+                             "10", 
+                             "OneFile", 
+                             "1", 
+                             ($exportPath),
+                             "0",
+                             "",
+                             "0", 
+                             "add", 
+                             "0", 
+                             "1", 
+                             "1",
+                             "0",
+                             "0",
+                             "mcc" } ;
+    print ("\nCache for " + $ul_CT_current_object +" READY!\n");
+	select -r $ul_CT_current_object;
+	refresh();
+	if($Clear)
+    {
+      ul_DeleteCurrentCaches(0);
+	}
+  }
+}
+
+//------------------------------------------------------------------------
+//---- Delete All Caches on selected objects
+//------------------------------------------------------------------------
+global proc ul_DeleteCurrentCaches(int $KeepForm)
+{
+  $currentObjectsList = `ls -sl`;                                 //get all selected objects
+  for($currentObject in $currentObjectsList)
+  {
+    string $cacheNodeToDelete = "";                               //place where cacheSwitch path will be stored
+    string $shapeNodeToDelete = "";                               //place where shapeOrig path will be stored
+    string $currentShapes[] = `listRelatives -c $currentObject`;  //select shape
+       
+    if(size($currentShapes)>1)                                    //check if shapeOrig exist
+	{
+	  if($currentShapes[1] == ($currentShapes[0]+"Orig"))
+      {
+        //print $currentShapes[1];
+        $shapeNodeToDelete = $currentShapes[1];
+      }
+	}
+	
+    string $listOfConnections[] = `listConnections $currentShapes[0]`;//check if cacheSwitch exist
+    //print $listOfConnections;
+    for($node in $listOfConnections)
+    {
+      if(`gmatch $node "*cache*"` || `gmatch $node "*Switch*"`)
+      $cacheNodeToDelete = $node;
+    }
+	
+	//Check results and delete
+	if(($cacheNodeToDelete == "") && ($shapeNodeToDelete == ""))
+	{
+	  print (">>>" + $currentObject + " has no caches attached\n");
+	}else
+	{
+	  if($KeepForm ==0)
+	  {
+	    if($shapeNodeToDelete == "")
+	    {
+	      delete $cacheNodeToDelete;
+	    }
+	    if($cacheNodeToDelete == "")
+	    {
+	      delete $shapeNodeToDelete;
+	    }
+	    if(($cacheNodeToDelete != "") && ($shapeNodeToDelete != ""))
+	    {
+	      connectAttr -f ($shapeNodeToDelete + ".worldMesh[0]") ($currentShapes[0]+".inMesh");
+		  delete $cacheNodeToDelete;
+		  refresh;
+		  delete $shapeNodeToDelete;
+	    }
+	  }
+	  if($KeepForm ==1)
+	  {
+	    if($shapeNodeToDelete == "")
+	    {
+	      delete $cacheNodeToDelete;
+	    }
+	    if($cacheNodeToDelete == "")
+	    {
+	      delete $shapeNodeToDelete;
+	    }
+	    if(($cacheNodeToDelete != "") && ($shapeNodeToDelete != ""))
+	    {
+	      delete $shapeNodeToDelete;
+	      delete $cacheNodeToDelete;
+	    }
+	  }
+	}
+  }
+}
+
+//------------------------------------------------------------------------
+//---- CHECKING if current object already has cache nodes attached:
+//------------------------------------------------------------------------
+global proc int ul_ChacheExistCheck(string $currentObject)
+{
+  int $existCache = 0;
+  string $currentShapes[] = `listRelatives -c $currentObject`;
+  string $connectedToShape[] = `listConnections $currentShapes[0]`;
+  string $currObject;
+  for($currObject in $connectedToShape)
+  {
+    if(`gmatch $currObject "*cache*"` || `gmatch $currObject "*Switch*"`)
+    {
+      $existCache = 1;
+    }
+  }
+  
+  return $existCache;
+}
+
+//------------------------------------------------------------------------
+//---- Find Selected object CacheNode Name
+//------------------------------------------------------------------------
+global proc string ul_FindChacheNodeName(string $currentObject)
+{
+  string $CacheNodeName = "";
+  string $historySwitchNodeName = "";
+  string $currentShapes[] = `listRelatives -c $currentObject`;
+  string $connectedToShape[] = `listConnections $currentShapes[0]`;
+  string $currObject;
+  for($currObject in $connectedToShape)
+  {
+    if(`gmatch $currObject "*cache*"` || `gmatch $currObject "*Switch*"`)
+    {
+      $historySwitchNodeName = $currObject;
+    }
+  }
+  string $connectedToSwitche[] = `listConnections $historySwitchNodeName`;
+  for($currObject in $connectedToSwitche)
+  {
+    if(`gmatch $currObject "*Cache*"`)
+    {
+      $CacheNodeName = $currObject;
+    }
+  }
+  
+  return $CacheNodeName;
+}
+
+
+//------------------------------------------------------------------------
+//---- CHECKING if current object has any namespaces
+//------------------------------------------------------------------------
+global proc int ul_NamespaceExist(string $currentObject)
+{
+  int $existNS = 0;
+  if(`gmatch $currentObject "*:*"`)
+    $existNS = 1;
+  
+  return $existNS;
+}
+
+//------------------------------------------------------------------------
+//---- Converting namespace's : to _
+//------------------------------------------------------------------------
+global proc string ul_ConvertNamespace(string $currentObjectName)
+{
+  string $Buffer[];
+  $numtokens = `tokenize $currentObjectName ":" $Buffer`;
+  string $NewString = "";
+  for($i=0; $i<size($Buffer); $i++)
+  {
+    if($i==0)
+    {
+      $NewString = $NewString+$Buffer[$i];
+    }else
+    {
+      $NewString = $NewString+"_"+$Buffer[$i];
+    }
+  }
+
+  return $NewString;
+}
+
+//------------------------------------------------------------------------
+//---- Combining two strings and check slashes
+//------------------------------------------------------------------------
+global proc string ul_CT_check_and_combinePath(string $globalCachePath, string $currentCacheFolder, int $Mode)
+{
+  string $GlobalBuffer[];
+  $numTokens = `tokenize $globalCachePath "\\/" $GlobalBuffer`;
+  
+  string $LocalBuffer[];
+  $numTokens = `tokenize $currentCacheFolder "\\/" $LocalBuffer`;
+  
+  string $TMP_stringArray[] = stringArrayCatenate($GlobalBuffer, $LocalBuffer);
+  
+  string $NewPath = "";
+  for($i=0; $i<size($TMP_stringArray); $i++)
+  {
+    if($i==0)
+    {
+      $NewPath = $NewPath + $TMP_stringArray[$i];
+    }else{
+      if($Mode == 0)
+	  {
+	    $NewPath = $NewPath + "/" + $TMP_stringArray[$i];
+	  }else
+	  {
+	    $NewPath = $NewPath + "\\" + $TMP_stringArray[$i];
+	  }	  
+    }
+  }
+
+  return $NewPath;
+}

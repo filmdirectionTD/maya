@@ -1,0 +1,198 @@
+//  
+//  Script File
+//  MODIFY THIS AT YOUR OWN RISK
+//
+//
+//  Creation Date:  26 April 2005					      
+//
+//  Last revision date: 17 June 2005
+//
+//  Copyright (c) 2005 Alexey Mazurenko aka Archie Zbyshek
+//  Autor: Alexey Mazurenko aka Archie Zbyshek
+//	   	   zbyshek@mail333.com
+//  
+//  
+//	Version 1.1
+//
+//  Procedure Name: cameraZoomerate
+//
+//  Description:
+//  	Этот скрипт создает контекстный инструмент
+//		для интерактивного использования следующих инструментов:
+//		camera overscan, camera offsets и alfa gain image plane-а .
+//	Опции:  нажатие левой клавиши мыши - camera overscan.
+//		нажатие средней клавиши мыши - camera offsets.
+//		нажатие ctrl - alfa gain image plane-а.
+//		нажатие shift - camera reset.
+
+
+proc string currentCameraName ( ) {
+	string $curPanel = `getPanel -withFocus`;
+	if ( "modelPanel" != `getPanel -to $curPanel`)
+		error "Please, transfer focus in model panel!";
+	string $cameraName = `modelPanel -q -camera $curPanel`;
+	// Рассматриваем случай, когда к камере припаренчен некий объект
+	// в этом случае `modelPanel -q -camera $curPanel` выдает имя шейпа камеры, а
+	// нам нужно имя трансформа
+	if (objectType ($cameraName) == "camera" ){
+		string $res[] = `listRelatives -parent $cameraName`;
+		return $res[0];
+	}
+	return $cameraName;
+}
+
+proc cameraZoomerateContext ( ) {
+	draggerContext
+	    	-pressCommand    "cameraZoomerateMousePress"
+	    	-dragCommand     "cameraZoomerateMouseDrag"
+	    	-image1 "cameraZoomerate.bmp"
+	    	-image2 "cameraZoomerate.bmp"
+	    	-image3 "cameraZoomerate.bmp"
+	    	//-releaseCommand  "cameraZoomerateMouseRelease"
+	    	-cursor          "default"
+	    cameraZoomerateContext;
+} 
+ 
+proc int sign (float $delta) {
+ 	if ($delta>=0)
+ 		return -1;
+ 	return 1;
+}
+ 
+global proc cameraZoomerateMousePress ( ) {
+	// Находим имя камеры
+	string $cameraName = `currentCameraName`;
+	// Находим шейп камеры
+	string $camShape[] = `listRelatives -c -typ camera $cameraName`;
+	// Находим Image Plane
+	string $imagePlane[] = `listConnections -t imagePlane $camShape[0]`;
+	// Создаем строку вызова офсетов камеры
+	string $xOffset = ($cameraName + ".horizontalFilmOffset");
+	string $yOffset = ($cameraName + ".verticalFilmOffset");
+	// Создаем строку вызова оверскана камеры
+	string $overscan = ($cameraName + ".overscan");
+	
+	int    $button     = `draggerContext -query -button cameraZoomerateContext`;
+	string $modifier   = `draggerContext -query -modifier cameraZoomerateContext`;
+	
+	// Инициализация глобальных переменных
+  	global float $az_currentXoffset = 0.0;
+  	global float $az_currentYoffset = 0.0;
+  	global float $az_currentOverscan = 0.0;
+  	global int $az_imagePlaneExists = 0;
+  	global float $az_imagePlaneAlpha = 0;
+  	// Находим текущие офсеты камеры
+  	$az_currentXoffset = `getAttr $xOffset`;
+  	$az_currentYoffset = `getAttr $yOffset`;
+	$az_currentOverscan = `getAttr $overscan`;
+	// Восстанавливаем значения камеры 
+	if ($modifier == "shift") {
+		setAttr $xOffset 0;
+		setAttr $yOffset 0;
+		setAttr $overscan 1;
+		print ("Camera Reset \n");
+	}
+	// Находим текущий alpha Gain Image Plane-а, если он есть
+	if (`size($imagePlane)`) {
+		// Создаем строку вызова alpha Gain Image Plane-а
+		string $alpha = ($imagePlane[0] + ".alphaGain");
+		$az_imagePlaneAlpha = getAttr ($alpha);
+		$az_imagePlaneExists = 1;
+	}
+}
+
+global proc cameraZoomerateMouseDrag ( ) {
+	// Находим имя камеры
+	string $cameraName = currentCameraName();
+	// Создаем строку вызова оверскана камеры
+	string $overscan = ($cameraName + ".overscan");
+	// Находим шейп камеры
+	string $camShape[] = `listRelatives -c -typ camera $cameraName`;
+	// Находим Image Plane
+	string $imagePlane[] = `listConnections -t imagePlane $camShape[0]`;
+	// Создаем строку вызова alpha Gain Image Plane-а
+	string $alpha = ($imagePlane[0] + ".alphaGain");
+	// Создаем строку вызова офсетов камеры
+	string $xOffset = ($cameraName + ".horizontalFilmOffset");
+	string $yOffset = ($cameraName + ".verticalFilmOffset");
+	
+	global float $az_currentXoffset;
+	global float $az_currentYoffset;
+	global float $az_currentOverscan;
+	global int $az_imagePlaneExists = 0;
+  	global float $az_imagePlaneAlpha = 0;
+		
+	// Обработка контекста
+	int $button = `draggerContext -query -button cameraZoomerateContext`;
+	string $modifier   = `draggerContext -query -modifier cameraZoomerateContext`;
+	// Координаты точки нажатия
+	float $pressPosition[] = `draggerContext -query -anchorPoint cameraZoomerateContext`;
+	// Координаты точки смещения
+	float $dragPosition[] = `draggerContext -query -dragPoint cameraZoomerateContext`;
+	// Разница в смещении по Х
+	float $differenceX = $pressPosition[0] - $dragPosition[0];
+	// Разница в смещении по Y
+	float $differenceY = $pressPosition[1] - $dragPosition[1];
+	// Дельта для определения направления + -
+	float $delta = $differenceY - $differenceX;
+	int $sign = sign ($delta);
+	// Находим вектор смещения
+	float $distance = $sign*(sqrt (pow($differenceX,2) + pow($differenceY,2)));
+	if ($button == 1){
+		if ($modifier == "none") {
+			float $newOverscan = $az_currentOverscan + 0.001*$distance; 
+			if ($newOverscan < 1e-010)
+			$newOverscan = 1e-010;
+			setAttr $overscan $newOverscan;
+		}
+		if ($modifier == "ctrl"){
+			if (!$az_imagePlaneExists)
+				warning "No Image Plane Exists: Changing Alpha Gain Only Works With Image Planes";
+			else {
+				float $newAlpha = ($az_imagePlaneAlpha - ($distance/100));
+				$newAlpha = `clamp 0 1 $newAlpha`;
+				setAttr $alpha ($newAlpha);
+			}
+		}
+		if ($modifier == "shift") {
+			setAttr $xOffset 0;
+			setAttr $yOffset 0;
+			setAttr $overscan 1;
+			print ("Camera Reset \n");
+		}
+	// Перерисовка экрана во время выполнения скрипта
+	refresh -cv;
+	}
+	if ($button == 2){
+		if ($modifier == "none"){
+			string $xOffset = ($cameraName + ".horizontalFilmOffset");
+    			string $yOffset = ($cameraName + ".verticalFilmOffset");
+    			setAttr $xOffset ($az_currentXoffset+$differenceX*0.001); 
+    			setAttr $yOffset ($az_currentYoffset+$differenceY*0.001);
+    		}
+    		if ($modifier == "ctrl"){
+			if (!$az_imagePlaneExists)
+				warning "No Image Plane Exists: Changing Alpha Gain Only Works With Image Planes";
+			else {
+				float $newAlpha = ($az_imagePlaneAlpha - ($distance/100));
+				$newAlpha = `clamp 0 1 $newAlpha`;
+				setAttr $alpha ($newAlpha);
+			}
+		}
+    		if ($modifier == "shift") {
+					setAttr $xOffset 0;
+					setAttr $yOffset 0;
+					setAttr $overscan 1;
+					print ("Camera Reset \n");
+		}
+		// Перерисовка экрана во время выполнения скрипта
+		refresh -cv;
+	}
+}
+
+global proc cameraZoomerate ( ) {
+
+	if (!`contextInfo -ex cameraZoomerateContext`)
+			cameraZoomerateContext;
+	setToolTo cameraZoomerateContext;
+}

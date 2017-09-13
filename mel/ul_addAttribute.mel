@@ -1,0 +1,199 @@
+/*
+#	File: 	ul_addAttribute_UI.mel
+#
+# 	Description: add attribute to maya object to read it from renderman on per object base
+#
+#	Usage: place one or multiple attribute (separated by space like - mask1 mask2 mask3 id) name in first field
+#
+#
+#	Author:	Dmitry Shulga
+#	Site: 		www.pp.tc
+#	Skype:		v3d.ru
+#
+#	Company: 	ULITKA	
+#	Update: 	27.07.2010
+#
+#	Version:	0.1
+#	Changes:	
+#
+#  ———————————————————————
+#
+#  ———————————————————————
+*/
+
+
+//•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+global proc ul_addAttribute_UI ()
+{
+
+if (`window -exists ul_addAttribute_UI`) {deleteUI ul_addAttribute_UI;}
+
+	/// Window ///
+window -title "Add Attribute" -wh 450 300 ul_addAttribute_UI;	
+columnLayout ColumnLayout;
+
+//----------------------------------
+	frameLayout -labelVisible false -marginWidth 5 -marginHeight 5;
+        rowColumnLayout -numberOfColumns 2 
+                -columnWidth 1 350 -columnWidth 2 50;
+
+textField attr_list;
+checkBox -label "Shape" -value 1 addShape ;
+separator -height 15;
+separator;
+radioButtonGrp -numberOfRadioButtons 4  -cw 1 70 -cw 2 70 -cw 3 70 -cw 4 70 -select 1 -height 25  -label "Type" -labelArray4 "int" "float" "vector" "color" radioAttrType;
+text -label "";
+radioButtonGrp -numberOfRadioButtons 4  -cw 1 70 -cw 2 70 -cw 3 70 -cw 4 70 -select 1 -height 25 -label "Prefix" -labelArray4 "" "rmanF" "rmanV" "rmanC" radioAttrPrefix;
+text -label "";
+
+	rowColumnLayout -numberOfColumns 4
+	-columnWidth 1 110 -columnWidth 2 70 -columnWidth 3 70 -columnWidth 4 70;
+
+	setParent ul_addAttribute_UI|ColumnLayout;
+
+//-----------------------------------------------------------------------------------
+	frameLayout -labelVisible false -marginWidth 5 -marginHeight 5;
+        rowColumnLayout -numberOfColumns 2 
+                -columnWidth 1 350 -columnWidth 2 50;
+                
+floatSliderGrp 
+	-label "min" -field true
+    	-minValue 0 -maxValue 1
+    	-fmn 0 -fmx 1000
+	-step .1
+	-pre 1
+    	-value 0
+    	-cw 1 110
+    	attr_min;
+text -l "";
+
+floatSliderGrp 
+	-label "max" -field true
+    	-minValue 0 -maxValue 1
+    	-fmn 0 -fmx 1000
+	-step .1
+	-pre 1
+    	-value 1
+    	-cw 1 110
+    	attr_max;
+text " ";
+
+floatSliderGrp 
+	-label "def" -field true
+    	-minValue 0 -maxValue 1
+    	-fmn 0 -fmx 1000
+	-step .1
+	-pre 1
+    	-value 1
+    	-cw 1 110
+    	attr_default;
+text " ";
+//-----------------------------------------------------------------------------------
+	rowColumnLayout -numberOfColumns 5
+	-columnWidth 1 110 -columnWidth 2 70 -columnWidth 3 70 -columnWidth 4 70 -columnWidth 5 70;
+/*
+text "BlockAxis ";
+checkBox -label "X" sX;
+checkBox -label "Y" sY;
+checkBox -label "Z" sZ;
+checkBox -label "All" sA;
+*/
+
+	setParent ul_addAttribute_UI|ColumnLayout;
+
+//-----------------------------------------------------------------------------------
+	frameLayout -labelVisible false -marginWidth 5 -marginHeight 5;
+        rowColumnLayout -numberOfColumns 3 
+                -columnWidth 1 10 -columnWidth 2 380 -columnWidth 3 10 ;
+                
+text " ";           
+button -l "ADD attribute" -c "ul_addAttribute" MyButton4;
+text " ";   
+
+showWindow;
+
+};
+
+
+//•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+global proc ul_addAttribute () {
+
+float  $addShape = `checkBox -q -v addShape`;
+float  $attr_min = `floatSliderGrp -q -v attr_min` ;
+float  $attr_max = `floatSliderGrp -q -v attr_max` ;
+float  $attr_default = `floatSliderGrp -q -v attr_default`;
+
+//"int" "float" "vector" "color"
+string $attr_type = `radioButtonGrp -q  -select radioAttrType`;
+string $prefix = `radioButtonGrp -q  -select radioAttrPrefix`;
+
+if ($attr_type=="1") { $attr_type = "int"; } else
+if ($attr_type=="2") { $attr_type = "float";} else
+if ($attr_type=="3") { $attr_type = "vector";} else
+if ($attr_type=="4") { $attr_type = "color";}
+
+if ($prefix=="1") { $prefix = ""; } else
+if ($prefix=="2") { $prefix = "rmanF";} else
+if ($prefix=="3") { $prefix = "rmanV";} else
+if ($prefix=="4") { $prefix = "rmanC";}
+
+string $getAttrList= `textField -q -text attr_list`;
+string $attributes[] = stringToStringArray( $getAttrList , " ");
+string $sel[];
+
+if ($addShape == 0) { $sel = `ls -sl`;} else {$sel = `ls -sl -shapes -dag -lf`;}
+
+
+for ($cur_name in $sel) {
+	for ($cur_attr in $attributes) {
+		string $curLongName = ($prefix +$cur_attr);
+		if (`attributeExists $cur_attr $cur_name`!=1) {
+			if ($attr_type == "color") {
+				addAttr -ln ($curLongName) -nn ($cur_attr) -usedAsColor -attributeType float3 $cur_name;
+				addAttr -ln ("red_"    +  $curLongName) -at "float" -parent  $curLongName $cur_name;
+				addAttr -ln ("green_" +  $curLongName) -at "float" -parent  $curLongName $cur_name;
+				addAttr -ln ("blue_"   +  $curLongName) -at "float" -parent  $curLongName $cur_name;
+				setAttr -e-keyable true ($cur_name + ".red_"		+  $curLongName);
+				setAttr -e-keyable true ($cur_name + ".green_"	+  $curLongName);
+				setAttr -e-keyable true ($cur_name + ".blue_"		+  $curLongName);
+			} else if ($attr_type == "vector") {
+				addAttr -ln ($curLongName) -nn ($cur_attr) -attributeType double3 $cur_name;
+				addAttr -ln ($curLongName +"X") -at double -p  $curLongName $cur_name;
+				addAttr -ln ($curLongName +"Y") -at double -p  $curLongName $cur_name;
+				addAttr -ln ($curLongName +"Z") -at double -p  $curLongName $cur_name;
+				setAttr -type double3 ($cur_name + "." + $curLongName) 0 0 0;
+				setAttr -e-keyable true ($cur_name + "." + $curLongName + "X");
+				setAttr -e-keyable true ($cur_name + "." + $curLongName + "Y");
+				setAttr -e-keyable true ($cur_name + "." + $curLongName + "Z");
+			} else if ($attr_type == "float") {
+				addAttr -ln $curLongName -nn $cur_attr -at double  -min $attr_min  -max $attr_max  -dv $attr_default   $cur_name;
+				setAttr -e-keyable true ($cur_name + "." + $curLongName);
+			} else if ($attr_type == "int") {
+				addAttr -ln $curLongName -nn $cur_attr -at long  -min $attr_min  -max $attr_max  -dv $attr_default   $cur_name;
+				setAttr -e-keyable true ($cur_name + "." + $curLongName);
+			}
+		} else {
+			//print("attribute " +  $cur + ".rmanF_colorPP  exists; ");
+		}
+	}	
+}
+print("\n");
+
+
+if ($addShape == 0) {
+	for ($cur_name in $sel) {
+		for ($cur_attr in $attributes) {
+			print("[mattr \"" + $cur_name + "." + $prefix + $cur_attr + "\" $F]\n");
+		}
+	}
+} else {
+	for ($cur_attr in $attributes) {
+		print("[mattr \"$OBJNAME." + $prefix + $cur_attr + "\" $F]\n");
+	}
+}
+
+refreshAE;
+refresh;
+}
+//•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
+

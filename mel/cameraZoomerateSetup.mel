@@ -1,0 +1,34 @@
+//  
+//  Script File
+//  MODIFY THIS AT YOUR OWN RISK
+//
+//
+//  Creation Date:  27 April 2005					      
+//
+//  Last revision date: 27 April 2005
+//
+//  Autor: Archie Zbyshek
+//	   zbyshek@mail333.com
+//  
+//  
+//  Procedure Name: cameraZoomerateSetup
+//
+//  Description:
+//	Setup az_zoomerate procedure
+//	Call az_zoomerateSetup
+
+global proc cameraZoomerateSetup () {
+
+	global string $gShelfTopLevel;
+	if (`tabLayout -exists $gShelfTopLevel`) {
+		shelfButton
+			-parent ($gShelfTopLevel + "|" + `tabLayout -q -st $gShelfTopLevel`)
+			-command "cameraZoomerate"
+			-image1 "cameraZoomerate.bmp"
+			-annotation "cameraZoomerate: Overscan (LMB), Offsets (MMB), alfa gain for Image Plane (Ctrl), camera reset (Shift)."
+			-label "cameraZoomerate";
+				
+	} else	error "You need a shelf for `cameraZoomerate` to work!";
+}
+
+cameraZoomerateSetup;

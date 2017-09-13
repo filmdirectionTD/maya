@@ -1,0 +1,689 @@
+// DD_Import_Export.dlemmon.mel
+// 
+// Script to import and export chan files
+//
+// FXdejesus 2/98 prismcam.mel
+// modified 01/00 dlemmon juanluis
+// modified 01/01 darren added versioning control 
+// modified 06/01 dlemmon to fix bugs, add multiple exports
+
+// imports camera chan files <frame tx ty tz rx ry rz fovv>
+global proc importCamChan(int $rotOrder, float $unitScaleVal) {
+
+  string $cam;
+  string $selectCam[] = `ls -sl`;
+  string $selfile;
+  string $camShapeList[] = `listRelatives -s`;
+  string $camShape = $camShapeList[0];
+  string $typeIsCam[] = `ls -showType $camShape`;
+  string $frameAttr[] ;
+  string $vfovAttr[] ;
+  float  $camAspect;
+  
+  $chandir = (`getenv "JS_job"`+"/CAMERA/img/"+`getenv "SHOT"`+".odd/*.chan");
+  
+  if (size($selectCam) == 0) {
+    error "You must select the camera first to apply the import curves to";
+  } else {
+    if ($typeIsCam[1] == "camera") {
+      // open a file selector to have the user find the .chan file
+      string $selfile = `fileDialog -dm $chandir`;
+      if ($selfile == "") {
+	warning "import camera CANCELLED\n";
+      } else {
+	importCamChanCallback $rotOrder $unitScaleVal $selfile;
+      }
+    } else {
+      error "Object selected must be a camera";}
+  } 
+}
+
+global proc importCamChanCallback(int $rotOrder, float $unitScaleVal, string $selfile)
+{
+  print ("importing "+$selfile+"\n");
+  string $cam;
+  string $selectCam[] = `ls -sl`;
+  string $selfile;
+  string $camShapeList[] = `listRelatives -s`;
+  string $camShape = $camShapeList[0];
+  string $typeIsCam[] = `ls -showType $camShape`;
+  string $frameAttr[] ;
+  string $vfovAttr[] ;
+  float  $camAspect;	
+  for ($cam in $selectCam) {
+    
+    $frameAttr = `listAttr -string "import_frame" $cam`;
+    $vfovAttr  = `listAttr -string "import_vfov" $cam`;
+    
+    print("Applying import curves to camera: "+$cam+"\n");
+    
+    currentTime 1;
+    
+    if ($frameAttr[0] != "import_frame") {
+      // create empty channel on camera
+      addAttr -sn import_frame $cam;
+    }
+    
+    if ($vfovAttr[0] != "import_vfov") {
+      // create vertical fov channel on camera
+      addAttr -sn import_vfov $cam; 
+    }
+    
+    // delete old animation curves if they already exist 
+    string $listImportedCurves[10] = {"translateX", "translateY", "translateZ", "rotateX", "rotateY", "rotateZ", "import_frame", "import_vfov", "unitScale","m2decimeters"};
+    
+    for ($curve in $listImportedCurves)
+      {
+	$curveName = ($cam+"_"+$curve);
+	$curveLs = `ls $curveName`;
+	$curveExists = `size $curveLs`;
+	
+	if ($curveExists != 0) {
+	  print("Deleting existing import curve: "+$curveName+"\n");
+	  delete $curveName;
+	} 
+      }
+    
+    print ("Reading in raw track data from file \""+$selfile+"\"\n");
+    // read in raw data
+    // There were some problems with maya so if it read in a bad track file it would die.  
+    // By creating a $cmd and using the catch(eval)) we can catch the errors without just exiting....
+    $cmd = ("movIn -f \""+$selfile+"\" \""+$cam+".import_frame\" \""+$cam+"\".tx\""+$cam+".ty\" \""+$cam+".tz\" \""+$cam+".rx\" \""+$cam+".ry\" \""+$cam+".rz\" \""+$cam+".import_vfov\"");
+    if (catch(eval($cmd))) { 
+      confirmDialog -title "Error" -message ("There is a problem with file :\n"+$selfile+"")
+	-button "Dismiss" ;
+      return;  
+      
+    } 	
+    
+    // delete expression if it already exists 
+    $exprName = $cam+"Focal";
+    $exprNameExists = `ls $exprName`;
+    $exprExists = `size $exprNameExists`;
+    
+    if ($exprExists != 0) {
+      print("Deleting existing expression: "+$exprName+"\n");
+      delete $exprName;
+    }
+    
+    print("Creating new expression: "+$exprName+"\n");
+    $expr     = $camShape+".focalLength = "+$camShape+".verticalFilmAperture * 25.4 / (2 * tand("+$cam+".import_vfov/2))";
+    expression -n $exprName -s $expr;
+    
+    // set camera rotate order
+    // 0 - xyz
+    // 1 - yzx
+    // 2 - zxy
+    // 3 - xzy
+    // 4 - yxz
+    // 5 - zyx
+    setAttr ($cam+".rotateOrder") $rotOrder;
+    
+    // scale factor to compensate for different units in different packages 
+    print("Scaling "+$unitScaleVal+"\n");
+    $unitScale = ($cam+"_unitScale");
+    createNode "multiplyDivide" -n $unitScale;
+    connectAttr -f ($cam+"_translateX.output") ($unitScale+".input1X");
+    connectAttr -f ($cam+"_translateY.output") ($unitScale+".input1Y");
+    connectAttr -f ($cam+"_translateZ.output") ($unitScale+".input1Z");
+    connectAttr -f ($unitScale+".output.outputX") ($cam+".translate.translateX");
+    connectAttr -f ($unitScale+".output.outputY") ($cam+".translate.translateY");
+    connectAttr -f ($unitScale+".output.outputZ") ($cam+".translate.translateZ");
+    setAttr ($unitScale+".input2X") $unitScaleVal;
+    setAttr ($unitScale+".input2Y") $unitScaleVal;
+    setAttr ($unitScale+".input2Z") $unitScaleVal;
+    
+    // convert aperture from millimeters to inches
+    scaleKey -time ":" -vs 0.03937007874 -attribute horizontalFilmAperture $camShape;
+    scaleKey -time ":" -vs 0.03937007874 -attribute verticalFilmAperture $camShape;
+    
+    print ("Setting JOB Shot Track file Details \n");
+    select $cam;
+    if (!`objExists ($camShape+".TrackCamFile")`) addAttr -dt "string" -ln "TrackCamFile" $camShape;
+    if (!`objExists ($camShape+".RotOrder")`) addAttr -dt "string" -ln "RotOrder" $camShape;
+    if (!`objExists ($camShape+".UnitScaleVal")`) addAttr -dt "string" -ln "UnitScaleVal" $camShape;	    	
+    setAttr -type "string"  ($camShape+".TrackCamFile") $selfile;
+    setAttr -type "string"  ($camShape+".RotOrder") $rotOrder;
+    setAttr -type "string"  ($camShape+".UnitScaleVal") $unitScaleVal;
+    
+  }
+}
+
+
+// import object chan file <frame tx ty tz rx ry rz> 
+global proc importObjChan(int $rotOrder, float $unitScaleVal, int $frameInFirstCol) {
+
+  string $obj;
+  string $selectObjs[] = `ls -sl`;
+  string $selfile;
+  string $frameAttr[];
+  
+  $chandir = (`getenv "JS_job"`+"/CAMERA/img/"+`getenv "SHOT"`+".odd/*.chan");
+  
+  if (size($selectObjs) == 0) {
+    print("You must select the object(s) first to apply the import curves to");
+  } else {
+    
+    // open a file selector to have the user find the .chan file
+    $selfile = `fileDialog -dm $chandir`;
+    
+    if ($selfile == "") {
+      print "import Houdini object CANCELLED\n";
+    } else {
+      print ("importing "+$selfile+"\n");
+      
+      // apply curves to all selected objects
+      
+      for ($obj in $selectObjs) {
+	
+	print("Applying import curves to object: "+$obj+"\n");
+	
+	objectMoveCommand;
+	
+	currentTime 1;
+	
+	
+	$frameAttr = `listAttr -string "import_frame" $obj`;
+	  
+        if ($frameAttr[0] != "import_frame") {
+	  // create empty channel on object 
+	  addAttr -sn import_frame $obj;
+        }
+	
+	
+	// delete old animation curves if they already exist 
+	string $listImportedCurves[9] = {"translateX", "translateY", "translateZ", "rotateX", "rotateY", "rotateZ", "import_frame", "unitScale","m2decimeters"};
+	
+	for ($curve in $listImportedCurves)
+	  {
+	    $curveName = ($obj+"_"+$curve);
+	    $curveLs = `ls $curveName`;
+	    $curveExists = `size $curveLs`;
+	    
+	    if ($curveExists != 0) {
+	      print("Deleting existing import curve: "+$curveName+"\n");
+	      delete $curveName;
+	    } 
+	  }
+	
+	movIn -f $selfile $obj.import_frame $obj.tx $obj.ty $obj.tz $obj.rx $obj.ry $obj.rz;}
+	
+	// set object rotate order
+	// 0 - xyz
+	// 1 - yzx
+	// 2 - zxy
+	// 3 - xzy
+	// 4 - yxz
+	// 5 - zyx
+	setAttr ($obj+".rotateOrder") $rotOrder;
+	
+	// scale factor to compensate for different units in different packages 
+	$unitScale = ($obj+"_unitScale");
+	createNode "multiplyDivide" -n $unitScale;
+	connectAttr -f ($obj+"_translateX.output") ($unitScale+".input1X");
+	connectAttr -f ($obj+"_translateY.output") ($unitScale+".input1Y");
+	connectAttr -f ($obj+"_translateZ.output") ($unitScale+".input1Z");
+	connectAttr -f ($unitScale+".output.outputX") ($obj+".translate.translateX");
+	connectAttr -f ($unitScale+".output.outputY") ($obj+".translate.translateY");
+	connectAttr -f ($unitScale+".output.outputZ") ($obj+".translate.translateZ");
+	setAttr ($unitScale+".input2X") $unitScaleVal;
+	setAttr ($unitScale+".input2Y") $unitScaleVal;
+	setAttr ($unitScale+".input2Z") $unitScaleVal;
+	
+	select $obj;	
+      }
+    }
+  } 
+
+
+
+// export camera chan file <frame tx ty tz rx ry rz fovv>
+global proc exportCamChan() {
+
+  string $selectCam[] = `ls -sl`;
+  string $camShapeList[] = `listRelatives -s`;
+  string $camShape = $camShapeList[0];
+  string $typeIsCam[] = `ls -showType $camShape`;
+  float  $camAspect;
+
+  if (size($selectCam) == 0) {
+     error "You must select the camera first whose motion you wish you export";
+  } else {
+
+    if ($typeIsCam[1] == "camera") {
+
+       // open a file selector to have the user find the .chan file
+       fileBrowser "exportCamChan_callback" "Export_Camera" "*" 1;
+
+    } else {
+       error "Object selected must be a camera";
+    }
+  }
+
+}
+
+global proc exportCamChan_callback(string $fileName, string $foo) {
+
+  string $cam;
+  string $selectCam[] = `ls -sl`;
+  int $camRotOrder;
+  string $frameAttr[] ;
+  string $vfovAttr[] ;
+  string $cShapeList[];
+  string $cShape;
+  string $expr;
+  string $locatorDefaultList[];
+  string $locatorDefaultName;
+  string $constraintPosName;
+  string $constraintRotName;
+  
+  if ($fileName == "") {
+    warning "export camera CANCELLED\n";
+  } else {
+    
+    print ("Exporting to "+$fileName+"\n");
+    
+    for ($cam in $selectCam) {
+      
+      $cShapeList = `listRelatives -s`;
+      $cShape = $cShapeList[0];
+      
+      $frameAttr = `listAttr -string "export_frame" $cam`;
+      $vfovAttr  = `listAttr -string "export_vfov" $cam`;
+      
+      print("Exporting curves of camera: "+$cam+"\n");
+      
+      currentTime 1;
+      
+      if ($frameAttr[0] != "export_frame") {
+	// create empty channel on camera
+	addAttr -sn export_frame $cam;
+      }
+      
+      if ($vfovAttr[0] != "export_vfov") {
+	// create vertical fov channel on camera
+	addAttr -sn export_vfov $cam; 
+      }
+      
+      // delete expression if it already exists 
+      $exprName = $cam+"vFov";
+      $exprNameExists = `ls $exprName`;
+      $exprExists = `size $exprNameExists`;
+      
+      if ($exprExists != 0) {
+	print("Deleting existing expression: "+$exprName+"\n");
+	delete $exprName;
+      }
+      
+      print("Creating new expression: "+$exprName+"\n");
+      $expr = $cam+".export_vfov = 2 * atand("+$cShape+".verticalFilmAperture * 25.4/ (2 * "+$cShape+".focalLength ));";
+      expression -n $exprName -s $expr;
+      
+      // delete expression if it already exists 
+      $exprName = $cam+"Frame";
+      $exprNameExists = `ls $exprName`;
+      $exprExists = `size $exprNameExists`;
+      
+      if ($exprExists != 0) {
+	print("Deleting existing expression: "+$exprName+"\n");
+	delete $exprName;
+      }
+      
+      print("Creating new expression: "+$exprName+"\n");
+      $expr = $cam+".export_frame = frame";
+      
+      expression -n $exprName -s $expr;
+      
+      // create new locator
+      $locatorDefaultList = `spaceLocator`;
+      $locatorDefaultName = $locatorDefaultList[0];
+      setAttr  ($locatorDefaultName+".rotateOrder") 2;
+      
+      $constraintPosName = ($cam+"_export_pos_constraint");
+      pointConstraint -n $constraintPosName $cam $locatorDefaultName;
+      
+      $constraintRotName = ($cam+"_export_rot_constraint");
+      orientConstraint -n $constraintRotName $cam $locatorDefaultName;
+      
+      $camRotOrder = `getAttr ($cam+".rotateOrder")`;
+      setAttr ($locatorDefaultName+".rotateOrder") $camRotOrder;
+      
+      // write out raw data
+      movOut -f $fileName ($cam+".export_frame") ($locatorDefaultName+".tx") ($locatorDefaultName+".ty") ($locatorDefaultName+".tz") ($locatorDefaultName+".rx") ($locatorDefaultName+".ry") ($locatorDefaultName+".rz") ($cam+".export_vfov");
+      
+      delete $constraintPosName $constraintRotName $locatorDefaultName;
+      
+      select $cam;
+    }
+  }
+}
+
+
+// export object chan file <frame tx ty tz rx ry rz>
+global proc exportObjChan() {
+  
+  string $selectObj[] = `ls -sl`;
+  
+  if (size($selectObj) == 0) {
+    error "You must select the objera first whose motion you wish you export";
+  } else {    
+    // open a file selector to have the user find the .chan file
+    fileBrowser "exportObj_callback" "Export_Object" "*" 1;
+  } 
+}
+
+global proc exportObj_callback(string $fileName, string $foo) {
+
+  string $obj;
+  string $selectObj[] = `ls -sl`;
+  int    $objRotOrder;
+  string $frameAttr[] ;
+  string $expr;
+  string $locatorDefaultList[];
+  string $locatorDefaultName;
+  string $constraintPosName;
+  string $constraintRotName;
+  
+  if ($fileName == "") {
+    warning "export object CANCELLED\n";
+  } else {
+    
+    print ("Exporting to "+$fileName+"\n");
+    
+    for ($obj in $selectObj) {
+      
+      $frameAttr = `listAttr -string "export_frame" $obj`;
+      
+      print("Exporting curves of objera: "+$obj+"\n");
+      
+      currentTime 1;
+      
+      if ($frameAttr[0] != "export_frame") {
+	// create empty channel on objera
+	addAttr -sn export_frame $obj;
+      }
+      
+      // delete expression if it already exists 
+      $exprName = $obj+"Frame";
+      $exprNameExists = `ls $exprName`;
+      $exprExists = `size $exprNameExists`;
+      
+      if ($exprExists != 0) {
+	print("Deleting existing expression: "+$exprName+"\n");
+	delete $exprName;
+      }
+      
+      print("Creating new expression: "+$exprName+"\n");
+      $expr = $obj+".export_frame = frame";
+      
+      expression -n $exprName -s $expr;
+      
+      // create new locator
+      $locatorDefaultList = `spaceLocator`;
+      $locatorDefaultName = $locatorDefaultList[0];
+      
+      $constraintPosName = ($obj+"_export_pos_constraint");
+      pointConstraint -n $constraintPosName $obj $locatorDefaultName;
+      
+      $constraintRotName = ($obj+"_export_rot_constraint");
+      orientConstraint -n $constraintRotName $obj $locatorDefaultName;
+      
+      $objRotOrder = `getAttr ($obj+".rotateOrder")`;
+      setAttr ($locatorDefaultName+".rotateOrder") $objRotOrder;
+      // Euler filter to remove the extra filps
+      //filterCurve  ($locatorDefaultName+".rx") ($locatorDefaultName+".ry") ($locatorDefaultName+".rz");
+
+      // write out raw data
+      movOut -f $fileName ($obj+".export_frame") ($locatorDefaultName+".tx") ($locatorDefaultName+".ty") ($locatorDefaultName+".tz") ($locatorDefaultName+".rx") ($locatorDefaultName+".ry") ($locatorDefaultName+".rz");
+      
+      delete $constraintPosName $constraintRotName $locatorDefaultName;
+      
+      select $obj;
+      
+    }
+  }
+}
+
+
+// export several object chan files <frame tx ty tz rx ry rz>
+// filename will be the same as the node's name
+global proc exportManyObjChan() {
+  
+  string $selectObj[] = `ls -sl`;
+  
+  if (size($selectObj) == 0) {
+    error "You must select the object first whose motion you wish you export";
+  } else {    
+    // open a file selector to have the user find the .chan file
+    fileBrowser "exportManyObj_callback" "Export_Several_Objects" "*" 1;
+  } 
+}
+
+global proc exportManyObj_callback(string $fileName, string $foo) {
+
+  string $obj;
+  string $selectObj[] = `ls -sl`;
+  string $fullName;
+  int    $objRotOrder;
+  string $frameAttr[] ;
+  string $expr;
+  string $locatorDefaultList[];
+  string $locatorDefaultName;
+  string $constraintPosName;
+  string $constraintRotName;
+
+  
+  if ($fileName == "") {
+    warning "export object CANCELLED\n";
+  } else {
+    
+    print ("Exporting to "+$fileName+".NODENAME.chan\n");
+    
+    for ($obj in $selectObj) {
+      
+      $frameAttr = `listAttr -string "export_frame" $obj`;
+      $fullName = ($fileName+"."+$obj+".chan");
+      
+      print("Exporting curves of object: "+$obj+"\n");
+      print("Writing curves to: "+$fullName+"\n");
+
+      currentTime 1;
+      
+      if ($frameAttr[0] != "export_frame") {
+	// create empty channel on object
+	addAttr -sn export_frame $obj;
+      }
+      
+      // delete expression if it already exists 
+      $exprName = $obj+"Frame";
+      $exprNameExists = `ls $exprName`;
+      $exprExists = `size $exprNameExists`;
+      
+      if ($exprExists != 0) {
+	print("Deleting existing expression: "+$exprName+"\n");
+	delete $exprName;
+      }
+      
+      print("Creating new expression: "+$exprName+"\n");
+      $expr = $obj+".export_frame = frame";
+      
+      expression -n $exprName -s $expr;
+      
+      // create new locator
+      $locatorDefaultList = `spaceLocator`;
+      $locatorDefaultName = $locatorDefaultList[0];
+      
+      $constraintPosName = ($obj+"_export_pos_constraint");
+      pointConstraint -n $constraintPosName $obj $locatorDefaultName;
+      
+      $constraintRotName = ($obj+"_export_rot_constraint");
+      orientConstraint -n $constraintRotName $obj $locatorDefaultName;
+      
+      $objRotOrder = `getAttr ($obj+".rotateOrder")`;
+      setAttr ($locatorDefaultName+".rotateOrder") $objRotOrder;
+      
+      // write out raw data
+      //movOut -f $fullName ($obj+".export_frame") ($locatorDefaultName+".tx") ($locatorDefaultName+".ty") ($locatorDefaultName+".tz") ($locatorDefaultName+".rx") ($locatorDefaultName+".ry") ($locatorDefaultName+".rz");
+
+      // write out raw data  //** CHANED THE PRECISION TO BE 10 DIGITS 
+      movOut  -f $fileName -pre 10 ($obj+".export_frame") ($locatorDefaultName+".tx") ($locatorDefaultName+".ty") ($locatorDefaultName+".tz") ($locatorDefaultName+".rx") ($locatorDefaultName+".ry") ($locatorDefaultName+".rz");
+
+      
+      delete $constraintPosName $constraintRotName $locatorDefaultName;
+      
+      select $obj;
+      
+    }
+  }
+}
+
+
+// This proc traverses the scene and checks to see if any of the cameras 
+// have the extra attribute ".TrackCamFile" on the shape node
+// if they have then it was loaded with the new track import, it then 
+// sends the camera to Track_CamVersionControl to check the camera
+// track and ensure it is the latest version.  If the camera is called 
+// CAM_ANIM it assumes there should be a track for it so it 
+// checks this cam as well.
+
+global proc Track_CheckSceneCameras()
+{
+  
+  string $cam_shapey[] = `ls -type "camera"`;
+  int $flag = 0;
+  for ($i = 0; $i < size($cam_shapey);$i++) 	{
+    string $cam_parents[] = `listRelatives -p $cam_shapey[$i]`;
+    if ((`objExists ($cam_shapey[$i]+".TrackCamFile")`) || ( $cam_parents[0] == "CAM_ANIM")) {
+      Track_CamVersionControl $cam_shapey[$i];
+      $flag = 1;
+    }
+  }
+  
+  if (!$flag) { 
+    confirmDialog -title "Confirm" -message ("No CAM_ANIM or any track cameras found in scene")
+      -button "Dismiss" ;
+  }
+}
+
+global proc Track_CamVersionControl(string $camera)
+{
+  global string $JOB, $SHOT;
+  string $tmp_buffer[],$tmp_string;
+  string $filename;
+  string $track_file, $Directory;
+  
+  // This checks ot see if the camera has a recored track file in the shape attribute of the camera....
+  if (`objExists ($camera+".TrackCamFile")`) {
+    $filename = `getAttr ($camera+".TrackCamFile")`;
+    
+    // we split up the direcotory by the "/" so that we can rebuild a clean direcotry name
+    tokenize $filename "/" $tmp_buffer;
+    // If the first bit is a drive letter remove it so if it has a z:/ or is just z/ ....
+    if (`gmatch $tmp_buffer[0] "*:"`) { $tmp_string = "" ; }
+    else  {
+      if (size ($tmp_buffer[0])  == 1) { $tmp_string = "" ; }
+      else { $tmp_string = ("/" + $tmp_buffer[0]); }
+    }
+    // Rebuild the file name without drive letters and this also alows us to extrack the camera name  
+    for ($i = 1; $i < (size($tmp_buffer) -1);$i++) {
+      $tmp_string = ($tmp_string + "/" + $tmp_buffer[$i]);
+    }
+    // we can get the camera direcotry and camera seperatly as we broke up the directory already
+    $track_file =  $tmp_buffer[(size($tmp_buffer) -1)];
+    $Directory = ($tmp_string +"/");
+    
+  }
+  // If the track direcory was not recoreded we know what it should be using standerd camera naming conventions.
+  else {
+    $Directory = ("/job/"+$JOB+"/CAMERA/img/"+$SHOT+".odd/camera_mv/");
+    print ("Could not find track direcotry on camera so checking in "+$Directory+" \n");
+    if (! `filetest -d $Directory`) {
+      confirmDialog -title "Error" -message ("Cannot find Directory :\n"+$Directory+"\nFor camera !!!")
+	-button "  Cancel  " -defaultButton "Yes"
+	-cancelButton "Cancel" -dismissString "Cancel";
+      return;  
+      
+    }
+    // we do not have a track file for the camera we have to find one ourseleves
+    $track_file = "";
+  }
+  
+  print ("The current Camera file is "+$track_file+"\n");
+  print ("The current Directory is "+$Directory+" \n");
+  // Get the files in the diretory
+  string $files[] = `getFileList -fld $Directory`;
+  float $high_val = 0; string $high_file = "";
+  int $flag = 0;
+  for ($i = 0; $i < size ($files);$i++) {
+    // Check the files to ensure they are chan files and have version numbers on them
+    if ((`gmatch $files[$i] "*.chan" `) && ((`gmatch $files[$i] "*_v*" `))  || (`gmatch $files[$i] "*_c*" `)){
+      $flag = 1;
+      // this replacesthe _v with a "." so the version number can be easily extracted from the name;
+      string $tmp_name = $files[$i];
+      while (`gmatch $tmp_name "*_v*" `) 
+	$tmp_name = `substitute "_v"  $tmp_name "."`;
+      while (`gmatch $tmp_name "*_c*" `) 
+	$tmp_name = `substitute "_c"  $tmp_name "."`;
+      tokenize  $tmp_name "." $tmp_buffer;
+      int $r = (size($tmp_buffer) -1 );
+      // we split the name by "." and look for the ".chan" we assume the version is right before it 
+      // i.e. hello.34.chan.old.oop
+      while (($r != 0) && ($tmp_buffer[$r] != "chan")) {
+	print (" In the while \n");
+	$r--;	
+      }
+      // we find the chan we then extract the number from the name;
+      if ($tmp_buffer[$r] == "chan") {
+	float $some_num = $tmp_buffer[$r - 1];
+	if ($some_num > $high_val) {
+	  $high_file =  $files[$i];
+	  $high_val = $some_num;
+	}
+      }
+    }
+  }
+  // If no tracks were found then give an error message...
+  if (!$flag) {
+    confirmDialog -title "Error" -message ("Cannot find Directory :\n"+$filename+"\nFor camera !!!")
+      -button "  Cancel  " -defaultButton "Yes"
+      -cancelButton "Cancel" -dismissString "Cancel";
+    return;  
+    
+    
+  }
+  
+  print ("Latest Track file is "+$high_file+"  in the directory \n");	
+  string $tmp_print = ("JOB       : \""+$JOB+"\"\nSHOT   : \""+$SHOT+" \"\nCamera : \""+$camera+"\" \nCurrent Track File : \""+$track_file+"\" \nCurrent Track Directory : \""+$Directory+"\" \n");
+  string $latest_complete_file = ($Directory+$high_file);
+  
+  if ($track_file == "" ){
+    $tmp_print = ("The Current camera has no track, or was loaded with an old version !!! \n"+ $tmp_print);
+  }
+  if ($high_file != $track_file) {
+    print ("the current scene is not the latest the latest scene "+$high_file+"\n");
+    $tmp_print = ($tmp_print + "\nLatest Track File : \""+$high_file+"\" \n");
+    $result = `confirmDialog -title "Confirm" -message $tmp_print
+      -button "Upgrade Camera" -button "  Cancel  " -defaultButton "Yes"
+      -cancelButton "Cancel" -dismissString "Cancel"`;
+    if ($result == "Upgrade Camera") {
+      select $camera;	
+      int $rot_order = 2;  float $unitScale = 1; 
+      // When the track is written out on the file it recored the unit scale and rot order so use these to load in the new track		
+      if (`objExists ($camera+".RotOrder")`) {string $tmpy = `getAttr ($camera+".RotOrder")`; $rot_order =  $tmpy;}
+      if (`objExists ($camera+".UnitScaleVal")`) {string $tmpy = `getAttr ($camera+".UnitScaleVal")`; $unitScale =  $tmpy;}
+      string $tmp_string[] = `listRelatives -p $camera`;
+      select $tmp_string[0];
+      $cmd = ("importCamChanCallback "+$rot_order+" "+$unitScale+" \""+$latest_complete_file+"\" ;");
+      eval( $cmd);
+    }
+    
+  }
+  else {	
+    $tmp_print = ($tmp_print + "\n This is the latest track !!!  \n");
+    confirmDialog -title "Confirm" -message $tmp_print
+      -button "Dismiss" ;    
+  }
+}
+
+
+

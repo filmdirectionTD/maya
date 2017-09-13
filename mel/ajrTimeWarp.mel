@@ -1,0 +1,438 @@
+/*
+###---------------------------------------------------###
+#   This script and updated versions can be found at:   #
+#                                                       #
+#         http://www.highend3d.com/maya/mel/            #
+#                                                       #
+###---------------------------------------------------###
+*/
+//	ajrTimeWarp.mel
+//	v 1.0	April 28 1999
+//	
+//	Tested on Maya1.5SGI, Maya2.0SGI, Maya2.0NT
+//	
+//	Extension of the functionality provided by 'timeWarp.mel' by Jeff Bell
+//	This script allows more control over the behaviour of the timewarp:
+//	o	Replace or add to existing timewarps
+//	o	Warp the upstream graph (warp expressions & deformers)
+//	o	Warp hierarchy branches or whole trees
+//
+//	Use
+//	It's GUI driven (but can be called directly using 'ajrTW_ApplyTimeWarp()')
+//	The options available are:
+//	o	Warp selected/all
+//		Choose to apply the timewarp to either the selected objects or to
+//		the entire scene.  If the whole scene is warped, the script ignores
+//		the hierarchy and upstream graph settings.
+//	o	Add/Replace existing timewarps
+//		Choose wether or not to replace existing timewarps - if not then they
+//		are left in place & the timewarp is added to the nodes furthest upstream
+//		Otherwise the new timewarp connects directly to the animation curves, 
+//		displacing any existing ones.
+//	o	Effect on hierarchy
+//		Apply the warp to the current node, its parents, children or both.
+//		Note that 'below' is the default mode - this means that shape node 
+//		animation (deformers etc) are warped by default when the object DAG is
+//		selected
+//	o	Warp upstream nodes
+//		Switch off to warp only those animation curves directly connected to the
+//		node(s).  Switch on to warp all the nodes upstream of the selection.
+//		If off, then the script will replace existing timewarps.
+//	There's only one menu, 'Select', which lets you select either all timewarp 
+//	nodes or just unconnected ones (nodes become unconnected when you replace 
+//	existing timewarps).
+//	
+//	To do
+//	Full testing really. Everything seems to work, but let's call this a beta
+//	release
+//	
+//	This script is unsupported; neither me nor (especially) my employer accept 
+//	liability for damage or loss resulting from its use or misuse. Use it at 
+//	your own risk. That said - if you like it, spot a bug in it or think it
+//	could be improved please let me know.
+//	
+//	Andy Rawling	andy.rawling@relaymail.net
+//	Animator
+//	BBC Television
+//	
+
+global proc ajrTW_PassTimeWarpParam() {
+// Function called by pressing the 'Apply' button in the Time Warp window
+// Query the window control settings & call the timewarp
+// Use this to allow the main ajrTW_ApplyTimeWarp function to be called from 
+// a script without passing parameters like "ui_ajrTW_existing_replace"
+	string $sRange; 		// "scene" or "selected"
+	string $sExisting;		// "add" or "replace"
+	string $sHierarchy; 	// "none", "above", "below" or "both"
+	string $sUpstream;		// "0" (zero) or "1"
+	
+	switch(string(`optionMenu -query -value ui_ajrTW_range`)) {
+		case "entire scene": $sRange = "scene"; break;
+		case "selected objects": $sRange = "selected"; break;
+	}
+	switch(string(`radioCollection -query -select ui_ajrTW_existing`)) {
+		case "ui_ajrTW_existing_add": $sExisting = "add"; break;
+		case "ui_ajrTW_existing_replace": $sExisting = "replace"; break;
+	}
+	switch(string(`radioCollection -query -select ui_ajrTW_hierarchy`)) {
+		case "ui_ajrTW_hierarchy_above": $sHierarchy = "above"; break;
+		case "ui_ajrTW_hierarchy_below": $sHierarchy = "below"; break;
+		case "ui_ajrTW_hierarchy_both": $sHierarchy = "both"; break;
+		case "ui_ajrTW_hierarchy_none": $sHierarchy = "none"; break;
+	}
+	$sUpstream = `checkBox -query -value ui_ajrTW_warpUpstream`;
+	
+	ajrTW_ApplyTimeWarp($sRange, $sExisting, $sHierarchy, $sUpstream);
+}
+
+global proc ajrTW_ApplyTimeWarp(string $sRange, string $sExisting, string $sHierarchy, string $sUpstream) {
+// Either invoked directly or called via `ajrTW_PassTimeWarpParam()` from the GUI
+// If calling directly use the following syntax:
+//	ajrTW_ApplyTimeWarp(string range, string existing, string hierarchy, string hypergraph);
+//	where:
+//		range is either "scene" or "selected"
+//		existing is either "add" or "replace"
+//		hierarchy is either "above", "below", "both", or "none"
+//		hypergraph is "0" (don't warp upstream) or "1" (warp upstream)
+	string $sAnimCurves[];
+	string $sSelected[];
+	
+	$sSelected = `ls -sl`;
+	
+	print($sRange + "\n");
+	print($sExisting + "\n");
+	print($sHierarchy + "\n");
+	print($sUpstream + "\n");
+	
+	if ($sRange == "scene") {
+		// Apply to entire scene
+		$sAnimCurves=`ls -type animCurveTL -type animCurveTA -type animCurveTT -type animCurveTU`;
+		ajrTW_WarpCurves($sAnimCurves, $sExisting);
+	} else {
+		// Apply to selected objects only
+		$sSelected	= ajrTW_GetHierarchy($sSelected, $sHierarchy);
+		$sAnimCurves = ajrTW_GetAnimCurves($sSelected, $sUpstream);
+		if($sUpstream != "0")
+			ajrTW_WarpCurves($sAnimCurves, $sExisting);
+		else
+			ajrTW_WarpCurves($sAnimCurves, "replace");
+	}
+}
+
+global proc string[] ajrTW_GetHierarchy(string $sSel[], string $sDir) {
+// Get the nodes in the hierarchy indicated for the selection
+// Selecting nodes below the current one is easy enough.
+// I've used the selection list rather than an array to hold the
+// parent nodes so I don't have to bother growing an array myself.
+	string $sNodes[];
+	string $sHierarchy[];
+
+	select -replace $sSel;
+	$sNodes = `ls -selection`;
+	switch($sDir) {
+		case "none"  :
+			break; 
+		case "below" :
+			select -replace -hierarchy $sSel;
+			$sNodes = `ls -selection`;
+			break; 
+		case "both"  :
+			select -replace -hierarchy $sSel;
+			$sNodes = `ls -selection`;
+		case "above" :
+			string $sPrevSel[];
+			$sPrevSel = $sNodes;
+			$sNodes = `pickWalk -direction "up"`;
+			select -add $sPrevSel;
+			$sNodes = `ls -selection`;
+			while(`size($sPrevSel)` < `size($sNodes)`) {
+				$sPrevSel = $sNodes;
+				$sNodes = `pickWalk -direction "up"`;
+				select -add $sPrevSel;
+				$sNodes = `ls -selection`;
+			}
+			break; 
+	}
+	print $sNodes;
+	return $sNodes;
+}
+
+global proc string[] ajrTW_GetAnimCurves(string $sSel[], string $sUp) {
+// Get the animCurves feeding into the selected nodes
+// If 'warp upstrem nodes' is selected, then build a list of connections
+// coming into the node - I've used the selection list for this so I don't have
+// to worry about selecting the same node several times in a complex graph.
+// There _is_ be a better way of getting the upstream nodes, isn't there?
+// (prize for the first working answer :)
+	string $sCurves[];
+	string $sConn[];
+	string $sNode;
+	string $sType;
+
+	// Make a list of the nodes connected to the selection that may
+	// be animCurve nodes
+	switch($sUp) {
+		case "0":
+			// Add all the input nodes to the list of connections (ignore conversion nodes)
+			$sConn = `listConnections -source true -destination false -shapes true -skipConversionNodes true $sSel`;
+			break;
+		case "1":
+			// Add upstream nodes of the current selection to the selection list
+			// Repeat until the list stops growing, then stick the selection in the
+			// list of connections
+			string $sPrevConn[];
+			select -replace `listConnections -source true -destination false -shapes true $sSel`;
+			$sConn = `ls -selection`;
+			if(`size($sConn)` > 0) {
+				$sPrevConn = $sConn;
+				select -add `listConnections -source true -destination false -shapes true $sPrevConn`;
+				$sConn = `ls -selection`;
+				while(`size($sPrevConn)` < `size($sConn)`) {
+					$sPrevConn = $sConn;
+					select -add `listConnections -source true -destination false -shapes true $sPrevConn`;
+					$sConn = `ls -selection`;
+				}
+			}
+			break;
+	}
+	
+	// Go through the list of nodes & keep all that are animCurve type, including  
+	// animCurveTT - existing timewarp nodes
+	for($sNode in $sConn) {
+	$sType = `nodeType $sNode`;
+		if( $sType == "animCurveTL" || $sType == "animCurveTA" || $sType == "animCurveTU" || $sType == "animCurveTT" )
+			$sCurves[(`size($sCurves)`)] = $sNode;
+	}
+
+	return $sCurves;
+}
+
+
+global proc ajrTW_WarpCurves(string $sCurves[], string $sOp) {
+// Create the timewarp node & connect to selected animation curves
+// If 'replace' is the selected operation, then simply force the 
+// connection regardless of what may already be connected.
+// If the operation is 'add', skip any node that already has a
+// connection on its input attribute ('Add' cannot be selected if
+// 'Warp upstream graph' is off)
+	string $sTimeWarp;
+	string $sNode;
+	
+	$sTimeWarp=`createNode animCurveTT -n "timeWarp"`;
+	setKeyframe -time 1 -value 1 $sTimeWarp;
+	setKeyframe -time 100 -value 100 $sTimeWarp;
+	// Make tangents linear
+	setAttr ($sTimeWarp + ".preInfinity") 1;
+	setAttr ($sTimeWarp + ".postInfinity") 1;
+	
+	
+	switch($sOp) {
+		case "replace":
+			for($sNode in $sCurves) {
+				connectAttr -f ($sTimeWarp + ".output") ($sNode + ".input");
+				print("\tconnect " + $sTimeWarp + " to " + $sNode + "\n");
+			}
+			break;
+		case "add":
+			for($sNode in $sCurves) {
+				// If an animCurve already has an input (from another timewarp) then
+				// insert the new timewarp between the animCurve & the old timeWarp
+				$sInput = `connectionInfo -sourceFromDestination ($sNode + ".input")`;
+				if($sInput == "") {
+					connectAttr -f ($sTimeWarp + ".output") ($sNode + ".input");
+					print("\tconnect " + $sTimeWarp + " to " + $sNode + ".\n");
+				} else {
+					print("\tskipping " + $sNode + ", will connect further upstream.\n");
+				}
+			}
+			break;
+	}
+	print("Timewarp done. Added node: " + $sTimeWarp + "\n");
+}
+
+global proc ajrTW_selectWarps(string $sRange) {
+// Menu function to select timewarp nodes
+// Either select all nodes, or unconnected (likely to 
+// appear after using 'replace existing')
+	string $sNodes[];
+	
+	switch($sRange) {
+		case "all":
+			select -replace `ls -type animCurveTT`;
+			break;
+		case "unused":
+			select -clear;
+			$sNodes = `ls -type animCurveTT`;
+			for($sNode in $sNodes) {
+				print($sNode);
+				if(!`connectionInfo -isSource ($sNode + ".output")`) {
+ 					select -add $sNode;
+					print " not connected\n";
+				} else
+					print " connected\n";
+			}
+			break;
+	}
+}
+
+global proc ajrTW_makeUI() {
+// Do the window stuff
+	global string $ajrTW_sOp;
+	global float $ajrTW_fDegU;
+	global float $ajrTW_fDegV;
+	global int $ajrTW_iPreU;
+	global int $ajrTW_iPreV;
+	global int $ajrTW_iSucU;
+	global int $ajrTW_iSucV;
+	
+	if (`window -exists ui_ajrTW`)
+		deleteUI ui_ajrTW;
+	
+	window	-title "Timewarp"
+			-iconName "TWarp"
+			-widthHeight 280 300
+			-menuBar true
+			ui_ajrTW;
+			
+		menu	-label "Select"
+				ui_ajrTW_sel;
+				
+			menuItem	-label "All warp nodes"
+						-command "ajrTW_selectWarps(\"all\")"
+						ui_ajrTW_sel|all;
+
+			menuItem	-label "Unused warp nodes"
+						-command "ajrTW_selectWarps(\"unused\")"
+						ui_ajrTW_sel|unused;
+
+			setParent -menu ..;
+		
+		formLayout ui_ajrTW_mainForm;
+		
+			frameLayout -borderStyle "in"
+						-labelVisible false
+						ui_ajrTW_mainFrame;
+						
+				scrollLayout	-childResizable false
+								-verticalScrollBarThickness 10
+								-horizontalScrollBarThickness 0;
+				
+					columnLayout	-adjustableColumn true
+									-cal "left";
+									
+						frameLayout -labelVisible false
+									-borderStyle "etchedIn" 
+									-manage true;
+							
+							columnLayout	-columnOffset "left" 0
+											-columnAlign "left";
+											
+								// Range of objects to be warped
+								// If 'Entire Scene' is selected then the hierarchy & hypergraph settings
+								// are greyed out, as they're going to be ignored
+								optionMenu	-label "Apply warp to"
+											-changeCommand "if(`optionMenu -q -v ui_ajrTW_range` == \"entire scene\") { frameLayout -edit -enable false ui_ajrTW_hierarchyFrame; frameLayout -edit -enable false ui_ajrTW_hypergraphFrame; } else { frameLayout -edit -enable true ui_ajrTW_hierarchyFrame; frameLayout -edit -enable true ui_ajrTW_hypergraphFrame; }"
+											ui_ajrTW_range;
+									menuItem -label "selected objects";
+									menuItem -label "entire scene";
+									
+									// What to do with existing warps?
+									// Choose to either replace them (the new timewarp will replace their connections 
+									// to the selected animCurves) or to add to them (the existing timewarps will be 
+									// affected by the new warp instead)
+									// Only the 'replace' option is available unless 'warp upstream graph' is on
+									radioCollection ui_ajrTW_existing;
+									radioButton -label "Add to existing timewarps"
+												-select
+												ui_ajrTW_existing_add;
+									radioButton -label "Replace existing timewarps"
+												ui_ajrTW_existing_replace;
+
+							setParent ..;
+						setParent ..;
+
+						frameLayout -label "Hierarchy"
+									 -borderStyle "etchedIn" 
+									 -collapsable false 
+									 ui_ajrTW_hierarchyFrame;
+
+							rowColumnLayout	-numberOfColumns 2
+											-columnAttach 1 "left" 50
+											-columnAttach 2 "left" 100
+											-columnWidth 1 40
+											-columnWidth 2 40;
+								
+								// How to affect the hierarchy
+								// Can choose to warp nodes above or below (or both) the selected node(s)
+								// 'Below' is on by default, as this allows shape animation to be warped
+								// by selecting the objects DAG node.
+								radioCollection ui_ajrTW_hierarchy;
+								radioButton -label "none"
+											ui_ajrTW_hierarchy_none;
+								radioButton -label "above"
+											ui_ajrTW_hierarchy_above;
+								radioButton -label "below"
+											-select
+											ui_ajrTW_hierarchy_below;
+								radioButton -label "both"
+											ui_ajrTW_hierarchy_both;
+							setParent ..;
+						setParent ..;
+
+						frameLayout -label "Hypergraph"
+									 -borderStyle "etchedIn" 
+									 -collapsable false 
+									 ui_ajrTW_hypergraphFrame;
+
+							columnLayout	-columnOffset "left" 50
+											-columnAlign "left";
+								
+								// Warp upstream nodes?
+								// 'On' allows deformers, expressions etc all to be timewarped
+								// 'Off' means that only those animation curves directly connected to the selected
+								// nodes will be warped (which means that existing timewarps must be replaced)
+								checkBox	-label "Warp upstream nodes"
+											-value on
+											-onCommand  "radioButton -edit -enable true ui_ajrTW_existing_add;  radioButton -edit -select ui_ajrTW_existing_add; "
+											-offCommand "radioButton -edit -enable false ui_ajrTW_existing_add; radioButton -edit -select ui_ajrTW_existing_replace"
+											ui_ajrTW_warpUpstream;
+								
+							setParent ..;
+						setParent ..;
+
+ 					setParent ..;
+   				setParent ..;
+   			setParent ..;
+		button	-label "Close"
+				-command "deleteUI ui_ajrTW"
+				ui_ajrTW_close;
+		
+		button	-label "Apply"
+				-command "ajrTW_PassTimeWarpParam"
+				ui_ajrTW_apply;
+		
+		formLayout -e
+			-attachForm ui_ajrTW_mainFrame "left" 5
+			-attachForm ui_ajrTW_mainFrame "right" 5
+			-attachForm ui_ajrTW_mainFrame "top" 5
+			-attachForm ui_ajrTW_mainFrame "bottom" 35
+			
+			-attachPosition	ui_ajrTW_close "left" 2 50
+			-attachForm	ui_ajrTW_close "right" 5
+			-attachNone	ui_ajrTW_close "top"
+			-attachForm	ui_ajrTW_close "bottom" 5
+
+			-attachForm	ui_ajrTW_apply "left" 5
+			-attachPosition	ui_ajrTW_apply "right" 2 50
+			-attachNone	ui_ajrTW_apply "top"
+			-attachForm	ui_ajrTW_apply "bottom" 5
+
+		ui_ajrTW_mainForm;
+ 
+ 	showWindow ui_ajrTW;
+}
+
+global proc ajrTimeWarp() {
+// Main proc
+	ajrTW_makeUI;
+}

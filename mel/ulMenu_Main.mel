@@ -1,0 +1,53 @@
+//    initializing ulitka main menu
+//    and add popup for it
+
+source ulDetectUser.mel;
+
+//----here we can override menuitems for any definite user
+eval( "source ulMenu_all.mel");
+
+
+global proc ulMenu_Main()
+{
+	string $userName = ulDetectUser();
+	
+	global string $gMainWindow;
+	global string $gUlitkaMenu;
+	
+	if( $gUlitkaMenu!="")
+	{
+		deleteUI $gUlitkaMenu;
+		$gUlitkaMenu="";
+	}
+	
+	if( $gMainWindow != "")
+	{
+		$gUlitkaMenu = `menu -parent $gMainWindow 
+						-helpMenu 0 
+						-tearOff true 
+						-label "FILMDIRECTION"`;
+
+        //--check for existance of user specific menus
+		if( `exists ulMenu_all`)
+			eval("ulMenu_all()");
+	}
+	switch (tolower($userName)){
+		case "evgeny":
+			break;
+		default: 			
+	} 
+}
+
+global proc ulMenu_Popup(string $palMenu)
+{
+    setParent -menu $palMenu;
+    string $items[] = `menu -query -ia $palMenu`;
+    for ($item in $items)
+    {
+		deleteUI $item;
+    }
+
+    //--check for existance of user specific menus
+	if( `exists ulMenu_all`)
+		eval("ulMenu_all()");
+}

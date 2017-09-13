@@ -1,0 +1,27 @@
+global proc fd_RIS_addDaylightControl()
+{
+    string $sel[] = `ls -sl -type "rmanDayLight"`;
+    if (!size($sel))
+    {
+        warning("Please select a rmanDayLight node first !");
+        return;
+    }
+    // the rmanDayLight shader
+    string $shd = $sel[0];
+    // Create a new directional light
+    string $lgt = `createNode "directionalLight" -n "SunManipShape"`;
+    setAttr ($lgt+".color") -type double3 0 0 0;
+    // Get the transform of the light shape
+    string $tr = firstParentOf($lgt);
+
+    // setup un expression to compute the direction vector
+    string $exp = (
+    "vector $p = <<0,0,1>>;\n"+
+    "$p = `rot $p <<1,0,0>> (deg_to_rad("+$tr+".rotateX))`;\n"+
+    "$p = `rot $p <<0,1,0>> (deg_to_rad("+$tr+".rotateY))`;\n"+
+    "$p = `rot $p <<0,0,1>> (deg_to_rad("+$tr+".rotateZ))`;\n"+
+    ""+$shd+".directionX = -$p.x;\n"+
+    ""+$shd+".directionY =  $p.y;\n"+
+    ""+$shd+".directionZ = -$p.z;\n");
+    expression -s $exp -n sunDirectionExpr;
+}

@@ -1,0 +1,14 @@
+global proc int az_lib_stringArrayGetIndexByItem(string $item, string $list[])
+//##################################################################################
+// Function. Returns first array element. If element doesn'exist returns -1
+//##################################################################################
+{
+	int $result = 0;
+	string $listItem;
+	
+	for ($listItem in $list) {
+		if ($item == $listItem) return $result;
+		$result++;
+	}
+	return -1;
+}

@@ -1,0 +1,148 @@
+//---------------------------------------------------------------------------------------------
+//Copyright (c) 2008 Alexander Sknarin
+//witchre.Lutojar@gmail.com
+//
+//How to use: 
+//	Select group of any of these polygon components:
+//	Vertices
+//	Edges
+//	Faces
+//	call as_MoveCenterToVertex command
+//
+//Restrictions:
+//	doesn't work with multi selection - you have to select group of only one type of components
+//	work with polygons only
+//----------------------------------------------------------------------------------------------
+
+global proc as_MoveCenterToVertex()
+{
+string $vtxlist[]; //vertex selection
+string $vtxlistSel[]; //temp selection
+string $flist[]; //faces selection
+string $elist[]; //edges selection
+
+string $Objname; //name of transform node to modify pivot
+string $ObjPivot[]; //pivot array
+float $vtx[];
+
+string $TestObjName[]; //what is selected?
+string $subobjectname;
+int $isitobject; //is it object selected?
+int $isitface; //is it faces selected?
+int $isitedge; //is it edges selected?
+int $isitvertex; //is vertexes selected?
+
+$TestObjName = `ls -sl`;
+$isitobject = `gmatch $TestObjName[0] "*.*"`;
+
+if ($isitobject == 0)
+	{
+	xform -cp;
+	} 
+  else
+	{
+	$subobjectname = `substitute "^[^.]*\\." $TestObjName[0] ""`;
+	$isitface = `gmatch $subobjectname "*f*"`; // if faces
+	
+		if ($isitface == 1){
+			//CONVERT SELECTOIN FROM FACES TO VTX
+			print "FACES SELECTED!";
+
+			$flist = `ls -sl`;
+			$vtxlistSel = `polyListComponentConversion -toVertex $flist`;
+			select -r $vtxlistSel;
+			$vtxlist = `ls -sl -fl`;
+			
+				for ($cur in $vtxlist){
+				float $vtxtmp[] = `pointPosition -w $cur`;
+
+   					for ($curtmp in $vtxtmp){
+   					$vtx[`size $vtx`] = $curtmp;
+					}
+				clear $vtxtmp;
+				}
+			select -r $flist;
+		
+			//print $vtx;
+			}
+		else
+			{
+
+			$isitedge = `gmatch $subobjectname "*e*"`; // if edges
+		
+			if ($isitedge == 1){
+				//CONVERT SELECTION FROM EDGES TO VTX
+				print "EDGES SELECTED!";
+
+				$elist = `ls -sl`;
+				$vtxlistSel = `polyListComponentConversion -toVertex $elist`;
+				select -r $vtxlistSel;
+				$vtxlist = `ls -sl -fl`;
+			
+					for ($cur in $vtxlist){
+					float $vtxtmp[] = `pointPosition -w $cur`;
+
+   						for ($curtmp in $vtxtmp){
+   						$vtx[`size $vtx`] = $curtmp;
+						}
+					clear $vtxtmp;
+					}
+				select -r $elist;
+				//print $vtx;
+
+				}
+			else
+				{
+				print "VERTEX SELECTED!";
+				$vtxlist = `ls -sl -fl`;
+					
+						for ($cur in $vtxlist){
+						float $vtxtmp[] = `pointPosition -w $cur`;
+
+   							for ($curtmp in $vtxtmp){
+   							$vtx[`size $vtx`] = $curtmp;
+							}
+						clear $vtxtmp;
+						}
+				//print $vtx;				
+				}
+			}
+
+//-------- Setup Pivot section -----------
+//123 array
+
+float $Xsum = 0; //take every 0-th element
+float $Ysum = 0; //take every 1-th element
+float $Zsum = 0; //take every 2-th element
+
+float $vtxarraysize = `size $vtx`;
+
+float $counter = $vtxarraysize/3;
+
+for ($i=0; $i<$vtxarraysize; $i=$i+3)
+	{
+       $Xsum = $Xsum + $vtx[$i];
+	$Ysum = $Ysum + $vtx[$i+1];
+	$Zsum = $Zsum + $vtx[$i+2];
+	}
+
+$Xsum = $Xsum/$counter;
+$Ysum = $Ysum/$counter;
+$Zsum = $Zsum/$counter;
+
+$Objname = `match "^[^\.]*" $vtxlist[0]`;
+
+string $SP = $Objname + ".scalePivot";
+string $RP = $Objname + ".rotatePivot";
+
+
+ctxEditMode;
+move -a $Xsum $Ysum $Zsum $SP $RP ;
+EnterEditMode;
+
+select -r $Objname;
+  }
+}
+
+
+

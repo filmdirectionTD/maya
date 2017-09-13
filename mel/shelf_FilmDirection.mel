@@ -1,0 +1,615 @@
+// ATTENTION:
+
+
+global proc shelf_FilmDirection () {
+    global string $gBuffStr;
+    global string $gBuffStr0;
+    global string $gBuffStr1;
+    global string $gul_ShelfButton_Render;
+	global string $gul_ShelfButton_RenderMenu;
+    global string $gul_ShelfButton_Ulitka;
+	global string $gul_ShelfButton_UlitkaMenu;
+/*
+    $gul_ShelfButton_Render = `shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -overlayLabelColor 0 0 0
+        -label "Main ULITKA render Control" 
+        -annotation "It is important to render your scenes using this button. It creates correct path to store rendered images. RMB to open UlitkaRenderMenu and select render or batch render and also different render options" 
+        -image1 "RenderSpool.png" 
+        -style "iconOnly" 
+        -command "source ulRenderMenu; ulRenderMainProc($ul_renderMode, $ul_renderListStr);"`
+    ;
+	$gul_ShelfButton_RenderMenu = `popupMenu ul_popupRender`;
+		menu -edit -pmc ("source ulRenderMenu;ulRenderMenuPopup " + $gul_ShelfButton_RenderMenu) $gul_ShelfButton_RenderMenu;
+
+
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+		-overlayLabelColor 0 0 0
+        -label "RenderGlobals" 
+        -image1 "ul_RENDGLS.XPM" 
+        -style "iconOnly" 
+        -command "python(\"import rfm.rmanPassEditor; rfm.rmanPassEditor.createPassEditor()\");" 
+    ;
+*/
+    $gul_ShelfButton_Ulitka = `shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+		-overlayLabelColor 0 0 0
+		-label "Ulitka Menu" 
+        -annotation "Ulitka Menu!" 
+        -image1 "ulitkaMenu.xpm" 
+        -style "iconOnly" 
+        -command "print (\"Press right button\");"`
+    ;
+	$gul_ShelfButton_UlitkaMenu = `popupMenu ul_popupMain`;
+		menu -edit -pmc ("source ulMenu_Main;ulMenu_Popup " + $gul_ShelfButton_UlitkaMenu) $gul_ShelfButton_UlitkaMenu;
+    
+/*
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -annotation "Open Slim" 
+        -label "Open Slim" 
+        -image1 "slim_icon.bmp" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "rmanLoadPlugin;rmanStartSlim;" 
+        -actionIsSubstitute 0
+    ;
+    
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -annotation "Select SLIM shader" 
+        -label "Select SLIM shader" 
+        -image1 "ul_selectSLIMshader.xpm" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "print \"Doesnt work yet\""//"selectInSlim( 1, 0 )" 
+        -actionIsSubstitute 0
+    ;
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -annotation "Open SLIM shader" 
+        -label "Open SLIM shader" 
+        -image1 "ul_openSLIMshader.xpm" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "print \"Doesnt work yet\""//"selectInSlim( 1, 1 )" 
+        -actionIsSubstitute 0
+    ;
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -annotation "Open Maya shader" 
+        -label "Open Maya shader" 
+        -image1 "ul_openMayaShader.xpm" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "ShowShadingGroupAttributeEditor" 
+        -actionIsSubstitute 0
+    ;
+*/    
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -label "Creates UlSpot with necessary attrs" 
+        -imageOverlayLabel "ulSpt" 
+		-overlayLabelColor 0 0 0 
+        -overlayLabelBackColor 1 1 1 0
+        -image1 "ulitka.xpm" 
+        -style "iconOnly" 
+        -command "source \"ul_cameraSpot.mel\"; ulSpot"
+	;
+
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -label "Set Multiple Atrrs" 
+        -imageOverlayLabel "StAtt" 
+		-overlayLabelColor 0 0 0 
+        -overlayLabelBackColor 1 1 1 0
+        -image1 "ulitka.xpm"
+        -style "iconOnly" 
+        -command "source \"ul_addAttribute.mel\"; ul_addAttribute_UI"
+    ;
+/*
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -label "ulMtorAddSubdivAttr " 
+        -imageOverlayLabel "subd" 
+		-overlayLabelColor 0 0 0 
+        -overlayLabelBackColor 1 1 1 0
+        -image1 "ulitka.xpm"
+        -style "iconOnly" 
+        -command "ul_AddSubdivAttr"
+    ;
+*/	
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -label "createFdCamera " 
+        -imageOverlayLabel "camr" 
+		-overlayLabelColor 0 0 0 
+        -overlayLabelBackColor 1 1 1 0
+        -image1 "fdcamera.png"
+        -style "iconOnly" 
+        -command "source fd_createCamera.mel; fd_createCamera;"
+    ;
+
+/*    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -label "Creates Ulitka's Chevelure Menu" 
+        -imageOverlayLabel "chev" 
+        -image1 "ulitka.xpm" 
+        -style "iconOnly" 
+        -command " source \"//server/Bin/modules/Chevelure/mel/ul_chevelureMenu.mel\"; chevelureCreateMainMenu;"
+;
+*/
+/* //maybe later
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -label "Shader Presets" 
+        -imageOverlayLabel "Shdrs"
+		-overlayLabelColor 0 0 0 
+        -overlayLabelBackColor 1 1 1 0		
+        -image1 "ulitka.xpm" 
+        -style "iconOnly" 
+        -command " python (\"import ulShaderPreset\"); python (\"ulShaderPreset.ul_shaderPreset()\");"
+*/
+;
+/*
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -label "Import Ulitka's Palette" 
+        -imageOverlayLabel "ulPal"
+		-overlayLabelColor 0 0 0 
+        -overlayLabelBackColor 1 1 1 0
+        -image1 "ulitka.xpm" 
+        -style "iconOnly" 
+        -command "string $base=`getenv ULITKALIB`; ul_shaderPresetCmd ($base+\"/3D/PALETTES/\") \"ul_palette\";"
+;
+*/
+    //----Separator
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 0
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Separator" 
+        -align "center" 
+        -labelOffset 0
+		-image "separator.png"
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+		-command "print \"separator\""
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+
+/*
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -label "Dailies Modeling" 
+        -imageOverlayLabel "dlzM" 
+		-overlayLabelColor 0 0 0 
+        -overlayLabelBackColor 1 1 1 0
+        -image1 "ulitka.xpm" 
+        -style "iconOnly" 
+        -command " python (\"import ulDailies3D\"); python (\"ulDailies3D.ulDailies3D(\\\"modeling\\\", 0)\");"
+	  -doubleClickCommand " python (\"import ulDailies3D\"); python (\"ulDailies3D.ulDailies3D(\\\"modeling\\\", 1)\");"
+	;
+*/
+
+    //----Separator
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 0
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Separator" 
+        -align "center" 
+        -labelOffset 0
+		-image "separator.png"
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+		-command "print \"separator\""
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+
+	//project manager
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Project Manager: Change the current project" 
+        -align "center" 
+        -label "Manager..." 
+        -labelOffset 0
+        -font "tinyBoldLabelFont" 
+        -imageOverlayLabel "PjMan"
+		-overlayLabelColor 0 0 0 
+        -overlayLabelBackColor 1 1 1 0
+        -image "ul_projectManager.bmp" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "pmUIManagerWindow" 
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+	// save+
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Incremental save" 
+        -align "center" 
+        -label "save+" 
+        -labelOffset 0
+        -font "tinyBoldLabelFont" 
+        -imageOverlayLabel ""
+		-overlayLabelColor 0 0 0 
+        -overlayLabelBackColor 1 1 1 0
+        -image "fd_Save+.png" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "pmIncrementalSave();" 
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+
+    //----Separator
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 0
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Separator" 
+        -align "center" 
+        -labelOffset 0
+		-image "separator.png"
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+		-command "print \"separator\""
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Opens the ulitka's online help in a browser" 
+        -align "center" 
+        -label "Help" 
+        -labelOffset 0
+        -font "tinyBoldLabelFont" 
+        -image "menuIconHelp.xpm" 
+        -image1 "menuIconHelp.xpm" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "system(\"load http://server\");" 
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ; 
+
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Deletes standart maya's popup menus" 
+        -align "center" 
+        -label "clean" 
+        -labelOffset 0
+        -font "tinyBoldLabelFont" 
+        -image "clean_shelf.png" 
+        -image1 "clean_shelf.png" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "as_cleanShelves();" 
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+
+	//----Separator
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 0
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Separator" 
+        -align "center" 
+        -labelOffset 0
+		-image "separator.png"
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+		-command "print \"separator\""
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+	
+	//----Separator - PRJ btn
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Next go Project Buttons"
+        -align "center" 
+        -labelOffset 0
+		-image "PROJ_btns.png"
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+		-command "print \"Next go Project Buttons\""
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+	
+	//custom Buttons for projects
+	ul_CustomProjectButtons();
+}
+
+//----Small functions
+global proc ul_AddSubdivAttr () {
+
+	$sel = `ls -sl -shapes -dag -typ "mesh"`; 
+	for ($a in $sel){
+		if (!`attributeExists "rman__torattr___subdivScheme" $a`) rmanAddAttr $a "rman__torattr___subdivScheme" "";
+	}
+}
+
+//-----CUSTOM BUTTONS SECTIONS - PROJECT RELATED
+global proc ul_CustomProjectButtons(){
+	$ul_Current_ProjectPath = `workspace -q -sn`;
+	$ul_Current_ProjectName = `basename $ul_Current_ProjectPath ""`;
+	
+	//Gagarin project
+	if($ul_Current_ProjectName == "Gagarin"){
+	
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Constrain Shaded R7 to locators" 
+        -align "center" 
+        -label "clean" 
+        -labelOffset 0
+        -font "tinyBoldLabelFont" 
+        -image "Gagarin_constrainBody.png" 
+        -image1 "Gagarin_constrainBody.png" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "source GAGARIN_2012_scripts.mel; GG2012RocketImportAnimationGUI();" 
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+	
+	//VIKING project
+	}else if($ul_Current_ProjectName == "VIKING"){
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Select Crowd Agent1 joints to bake" 
+        -align "center" 
+        -label "clean" 
+        -labelOffset 0
+        -font "tinyBoldLabelFont" 
+        -image "VIKING_selectCrowdAgent1.png" 
+        -image1 "VIKING_selectCrowdAgent1.png" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "source VIKING_2014_scripts.mel; VIK2014selectCrowdAgent01();" 
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;
+	shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Texture Randomization tool for crowd" 
+        -align "center" 
+        -label "clean" 
+        -labelOffset 0
+        -font "tinyBoldLabelFont" 
+        -image "VIKING_miarmyRandom1.png" 
+        -image1 "VIKING_miarmyRandom1.png" 
+        -style "iconOnly" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "python (\"from vkMiarmyRandom_01 import * \"); python (\"frame = vk_crowd_Window1() \");" 
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;	
+    //SALUT project
+    }else if($ul_Current_ProjectName == "SALUT"){
+    shelfButton
+        -enableCommandRepeat 1
+        -enable 1
+        -width 34
+        -height 34
+        -manage 1
+        -visible 1
+        -preventOverride 0
+        -annotation "Export animation into abc caches" 
+        -align "center" 
+        -label "abcExp" 
+        -labelOffset 0
+        -font "tinyBoldLabelFont" 
+        -image "SALUT_icon.png" 
+        -image1 "SALUT_icon.png" 
+        -style "iconAndTextHorizontal" 
+        -marginWidth 1
+        -marginHeight 1
+        -command "python (\"from salutABC_export import * \"); python (\"frame = salutAbcExport() \");" 
+        -sourceType "mel" 
+        -actionIsSubstitute 0
+    ;   
+	}else{
+		print "This project has no any custom shelf Buttons";
+	}
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

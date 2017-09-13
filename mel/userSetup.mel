@@ -1,0 +1,84 @@
+print "\n// Start FilDirection User Setup initializing. //\n";
+
+//----axuiliary functions
+proc ulInitScriptS ( string $name ){
+	print ("--starting " + $name + " \n");
+	eval ("source \"" + $name + "\"");
+	eval $name;
+	print ("--script   " + $name + " initialised\n");
+}
+
+proc ulInitScript ( string $name ){
+	print ("--starting " + $name + " \n");
+	eval $name;
+	print ("--script   " + $name + " initialised\n");
+}
+
+global proc string locScriptPath ( string $MELproc )
+{
+	string $path;
+	string $MELfile;
+	string $whatIsResult = `whatIs $MELproc`;
+	string $whatIsHack[];
+	tokenize $whatIsResult $whatIsHack;
+	
+	if (size($whatIsHack) > 1)
+	{
+		$MELfile = $whatIsHack[(size($whatIsHack) - 1)];
+		$path = dirname($MELfile);
+	}
+	
+	return $path;
+}
+
+//----Deleting All maya default popup Menus on FilmDirection shelf
+global proc as_cleanShelves()
+{
+	string $allButtons[], $allPopups[];
+	$allButtons = `shelfLayout -q -ca "FilmDirection"`;
+	for($buttonName in $allButtons)
+	{
+		$allPopups = `shelfButton -q -pma $buttonName`;
+		for($popMenu in $allPopups)
+		{
+			//print ($popMenu + "\n");
+			if(`substring $popMenu 1 3` != "ul_")
+				deleteUI $popMenu;
+		}
+	}
+}
+
+source ulDetectUser;
+ulInitScriptS ulMenu_Main;
+
+//project manager
+source projMan;
+pmInstallScriptJobs();
+
+//----Adding scripts to Maya hotkey editor - group FilmDirection
+source "ulRunTimeCommands.mel";
+
+//----Loading shelves
+// Film Direction shelf
+ulInitScriptS( "fd_ShelfInit");
+
+//--------------------------INITIAL MAYA SETUP FOR ALL
+scriptJob -e "NewSceneOpened" "currentUnit -time film;print \"FPS is set to FILM\\n\"";
+scriptJob -e "NewSceneOpened" "playbackOptions -min 1;currentTime 1;"; 
+scriptJob -e "NewSceneOpened" "setAttr \"perspShape.farClipPlane\" 100000; setAttr \"perspShape.nearClipPlane\" 2.0;";
+scriptJob -e "NewSceneOpened" "setAttr defaultResolution.width 2048; setAttr defaultResolution.height 858; setAttr defaultResolution.deviceAspectRatio 2.387;";
+scriptJob -e "NewSceneOpened" "as_cleanShelves(); print \" clean shelf called \"";
+
+
+
+// GLOBAL MAYA VARIABLES BLOCK-----------------
+
+global int $ul_renderMode; // initialisation of renderMode variable
+$ul_renderMode = 0;
+
+global string $ul_renderListStr; // initialisation of renderlist String
+$ul_renderListStr = "1";
+
+print "\n//Stop FilDirection User Setup initializing //\n.\n.\n.\n.";
+
+//python( "import cgmToolbox" );

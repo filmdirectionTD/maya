@@ -1,0 +1,68 @@
+global proc as_setMotionSamples( int $mode, int $number )
+{
+    print "-------------------------------\n";
+    $as_obects = `ls -sl`; //get selection
+    
+    //Mode 0 - remove attributes if it exists
+    if($mode == 0)
+    {
+        int $i = 1;
+        for($i = 0; $i<size($as_obects); $i++)
+        {
+            if(`attributeExists "rman__torattr___motionSamples" $as_obects[$i]`)
+            {
+                select -r $as_obects[$i];
+                deleteAttr -at "rman__torattr___motionSamples";
+                print($as_obects[1] + ".rman__torattr___motionSamples has been deleted\n");
+            }else{
+                print($as_obects[1] + " hasn't Motion samples. Skipped\n");
+            }
+        }
+    }else{
+        int $i = 1;
+        for($i = 0; $i<size($as_obects); $i++)
+        {
+            if(`attributeExists "rman__torattr___motionSamples" $as_obects[$i]`)
+            {
+                setAttr ($as_obects[$i]+".rman__torattr___motionSamples") $number;
+                print ($as_obects[$i]+".rman__torattr___motionSamples is set to "+$number + "\n");
+            }else{
+                select -r $as_obects[$i];
+                addAttr -ln "rman__torattr___motionSamples"  -at long  -dv 2;
+                print ($as_obects[$i]+" has now "+$number+" motion samples\n");
+            }
+        }
+    }
+    select $as_obects;
+    print "-------------------------------\n";
+}
+
+
+global proc as_setMotionSamplesUI()
+{
+    // Annotations 
+    string $ANN_01 = "Adds motionSamples attribute with Nuber set fron textfield. If attribute exists sets new value.";
+    string $ANN_02 = "Removes motionSamples attribute.";
+    string $as_addMotionSamplesNumberInput;
+    
+    string $as_sMsWindow = `window -title "Motion samples control"
+                         -iconName "AMS"
+                         -topEdge 512
+                         -leftEdge 512
+                         -widthHeight 250 200
+                         -sizeable false
+                         -resizeToFitChildren true`;
+    columnLayout -adjustableColumn true;
+        rowLayout -numberOfColumns 2 -columnWidth2 50 200 -adjustableColumn2 2;
+            string $as_addMotionSamplesNumberInput = `textField -text "2" -ann ""`;
+            string $as_addMotionSamplesBtn = `button -label "Set Motion Samples To Selected" -c ("string $as_NumberSteps = `textField -q -text " + $as_addMotionSamplesNumberInput + "`; as_setMotionSamples(1, (int)$as_NumberSteps );") -ann $ANN_01`;
+        setParent ..;
+        rowLayout -numberOfColumns 2 -columnWidth2 180 20 -adjustableColumn2 2;
+            text -label "";
+            string $as_removeMotionSamplesBtn = `button -label "Remove Motion Samples From Selected" -c ("as_setMotionSamples(0, 1)") -ann $ANN_02`;
+        setParent ..;
+        text -align "center" -label "\n1. Select objects to work with\n 2. \"Set Motion Samples To Selected\" Button \nwill add Motion Samples or set new value \nif it is existed.\n3. Remove Button will remove attribute itself.";
+    setParent ..;
+
+    showWindow $as_sMsWindow;
+}

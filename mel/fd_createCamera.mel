@@ -1,0 +1,93 @@
+global proc fd_createCamera()
+{
+	// create camera
+	$current_cam = `camera -centerOfInterest 5 
+						  -focalLength 35 
+						  -lensSqueezeRatio 1 
+						  -cameraScale 1 
+						  -horizontalFilmAperture 1.41732 
+						  -horizontalFilmOffset 0 
+						  -verticalFilmAperture 0.94488 
+						  -verticalFilmOffset 0 
+						  -filmFit Fill 
+						  -overscan 1 
+						  -motionBlur 0 
+						  -shutterAngle 180 
+						  -nearClipPlane 1.0 
+						  -farClipPlane 1000000 
+						  -orthographic 0 
+						  -orthographicWidth 30 
+						  -panZoomEnabled 0 
+						  -horizontalPan 0 
+						  -verticalPan 0 
+						  -zoom 1`; 
+	print $current_cam[1];
+
+	//create Mutiply Nodes
+	$multiplyHorizontal = `createNode multiplyDivide`;
+	$multiplyVertical = `createNode multiplyDivide`;
+	//setup multiply nodes
+	//set them to divide
+	setAttr ($multiplyHorizontal+".operation") 2;
+	setAttr ($multiplyVertical+".operation") 2;
+	//divide by 1000
+	setAttr ($multiplyHorizontal+".input2X") 1000;
+	setAttr ($multiplyVertical+".input2X") 1000;
+
+	//Convert resolution to aperture
+	//connect to multiply nodes:
+	connectAttr -f defaultResolution.width ($multiplyHorizontal+".input1X");
+	connectAttr -f defaultResolution.height ($multiplyVertical+".input1X");
+	//connect to camera
+	connectAttr -f ($multiplyHorizontal+".outputX") ($current_cam[1]+".horizontalFilmAperture");
+	connectAttr -f ($multiplyVertical+".outputX") ($current_cam[1]+".verticalFilmAperture");
+
+	//create plane:
+	$currentPlane = `polyPlane -w 1 -h 1 -sx 3 -sy 3 -ax 0 1 0 -cuv 2 -ch 1`;
+	//get plane shape node
+	$curPlaneShape = `listRelatives -s $currentPlane[0]`;
+	setAttr ($curPlaneShape[0]+".overrideEnabled") 1;
+	setAttr ($curPlaneShape[0]+".overrideDisplayType") 2;
+	setAttr ($curPlaneShape[0]+".overrideShading") 0;
+	setAttr ($curPlaneShape[0]+".overrideDisplayType") 2;
+	setAttr ($curPlaneShape[0]+".overrideShading") 0;
+	setAttr ($curPlaneShape[0]+".castsShadows") 0;
+	setAttr ($curPlaneShape[0]+".receiveShadows") 0;
+	setAttr ($curPlaneShape[0]+".motionBlur") 0;
+	setAttr ($curPlaneShape[0]+".primaryVisibility") 0;
+	setAttr ($curPlaneShape[0]+".smoothShading") 0;
+	setAttr ($curPlaneShape[0]+".visibleInReflections") 0;
+	setAttr ($curPlaneShape[0]+".visibleInRefractions") 0;
+	setAttr ($curPlaneShape[0]+".doubleSided") 0;
+	//parent to camera
+	parent $currentPlane[0] $current_cam[0];
+	//rotate
+	setAttr ($currentPlane[0]+".rx") 90;
+	//[0
+	//Additional multiply nodes for plane scale
+	$focalMultiply = `createNode multiplyDivide`;
+	setAttr ($focalMultiply+".input2X") -0.1;
+	//inch to mm conversion:
+	$horizontalFrameSizeMultiplyInchToMm = `createNode multiplyDivide`;
+	setAttr ($horizontalFrameSizeMultiplyInchToMm+".operation") 1;
+	setAttr ($horizontalFrameSizeMultiplyInchToMm+".input2X") 2.54;
+
+	$verticalFrameSizeMultiplyInchToMm = `createNode multiplyDivide`;
+	setAttr ($verticalFrameSizeMultiplyInchToMm+".operation") 1;
+	setAttr ($verticalFrameSizeMultiplyInchToMm+".input2X") 2.54;
+	//connect camera attributes to plane
+	connectAttr -f ($current_cam[1]+".focalLength") ($focalMultiply+".input1X");
+	connectAttr -f ($current_cam[1]+".horizontalFilmAperture") ($horizontalFrameSizeMultiplyInchToMm+".input1X");
+	connectAttr -f ($current_cam[1]+".verticalFilmAperture") ($verticalFrameSizeMultiplyInchToMm+".input1X");
+
+	connectAttr -f ($focalMultiply+".outputX") ($currentPlane[0]+".tz");
+	connectAttr -f ($horizontalFrameSizeMultiplyInchToMm+".outputX") ($currentPlane[0]+".sx");
+	connectAttr -f ($verticalFrameSizeMultiplyInchToMm+".outputX") ($currentPlane[0]+".sz");
+
+	//thirds visibility attribute
+	//add attribute to camera
+	addAttr -ln "ruleOfThirds"  -at bool  ("|"+$current_cam[0]+"|"+$current_cam[1]);
+	setAttr -k on ("|"+$current_cam[0]+"|"+$current_cam[1]+".ruleOfThirds");
+	setAttr ("|"+$current_cam[0]+"|"+$current_cam[1]+".ruleOfThirds") 1;
+	connectAttr -f ("|"+$current_cam[0]+"|"+$current_cam[1]+".ruleOfThirds") ($currentPlane[0]+".visibility");
+}

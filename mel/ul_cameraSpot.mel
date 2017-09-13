@@ -1,0 +1,92 @@
+/*
+#	File: 	ul_cameraSpot.mel
+#
+# 	Description: Create spot light from current viewport camera, and add attr for multishadow 
+#
+#	Usage: Simply execute from any viewport
+#			ul_cameraSpot (lookThrough camera, light intensity, decayRate (0 - none, 2 - quadratic), penumbraAngle)
+#
+#			ul_cameraSpot(0, 1000, 2, 0); //quadratic falloff, intensity 1000, not look through
+#			ul_cameraSpot(1, 1, 0, -10);
+#
+#	Author:	Dmitry Shulga
+#	Site: 		www.pp.tc
+#	Skype:	v3d.ru
+#
+#	Company: 	ULITKA	
+#	Update: 	25.06.2010
+#
+#	Version:	0.1
+#	Changes:	
+#
+#  ———————————————————————
+#
+#  ———————————————————————
+*/
+
+global proc ul_cameraSpot (float $lookThrough, float $intensity, float $decayRate, float $penumbraAngle)
+{
+	print ("in spot!!!\n");
+	// Create spot light from camera.
+
+	string $cur[] = `ls -sl`;
+
+	string $getPanel = `getPanel -wf`;
+	string $camera = `modelPanel -q -camera $getPanel`;
+
+
+	defaultSpotLight($intensity, 1,1,1, 0, 40, 0, $penumbraAngle, 0, 0,0,0, 1, 0);
+	string $spotTransform[] = `ls -sl`;
+	string $spotShape[] = `ls -sl -dag -s`;
+
+	vector $pos = `xform -q -t $camera`;
+	vector $rot = `xform -q -ro $camera`;
+
+	xform -t ($pos.x) ($pos.y) ($pos.z) $spotTransform;
+	xform -ro ($rot.x) ($rot.y) ($rot.z) $spotTransform;
+
+	//transfer parametr from camera
+	setAttr ($spotShape[0] + ".centerOfIllumination") (`getAttr ($camera + "Shape.centerOfInterest")`);
+	setAttr ($spotShape[0] + ".intensity") $intensity;
+	setAttr ($spotShape[0] + ".decayRate") $decayRate;
+	setAttr ($spotShape[0] + ".penumbraAngle") $penumbraAngle;
+	setAttr ($spotShape[0] + ".useDepthMapShadows") 1;
+
+
+	if ($lookThrough) {
+		lookThroughModelPanelClipped $spotTransform[0] $getPanel 0.1 100000;
+
+		float $originalCameraFOV = `getAttr ($camera + ".focalLength")`;
+		string $getPanel = `getPanel -wf`;
+		string $camera = `modelPanel -q -camera $getPanel`;
+		setAttr ($camera + ".focalLength") $originalCameraFOV ;
+	}
+
+	ulObjVarDo;
+	select -r $spotTransform[0];
+	print ("done\n");
+
+}
+
+
+//procedure for working with ulitka-style spotlights 
+
+global proc ulSpot()
+{
+	string $spotShape[] = `ls -sl -dag -s`;
+	
+	if (`size $spotShape`)
+	{	
+		if (`nodeType $spotShape[0]`=="spotLight")	
+			ulObjVarDo;
+		else
+			ul_cameraSpot(1, 1, 0, -10);
+		
+	}
+		else	
+	{	
+			ul_cameraSpot(1, 1, 0, -10);
+						
+	}
+
+}

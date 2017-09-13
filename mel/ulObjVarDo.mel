@@ -1,0 +1,387 @@
+//************************************ 
+// Copyright (C) 2003-2005 Ulitka.
+//************************************ 
+// Mel script to create some custom attributes on objects 
+// (geometry, ligth, camera)
+//------------------------------------
+// ver. 1.1     06.06.2005
+//------------------------------------
+// Based on objVarDo
+// 
+// 
+//------------------------------------
+// Worked under Maya 3.x -4.x (NT, Irix, Lunix) and 
+// w/ RAT 4.x - RAT 6.x 
+//------------------------------------
+// Author:
+// Kharitonov Konstantin
+// khar_khar@mail.ru
+//
+// Evgeny Barulin
+// barulin@gmail.com
+//************************************
+
+//need to redo it to avoid any MTOR calls
+
+
+global proc string AddColorAttribute(string $node, string $attr, float $c[])
+{
+    string $nm = ($node + "." + $attr);
+    string $result[] = `listAttr -r -st $attr $node`;
+    if (0 == size($result))
+    {
+	
+		addAttr -ln $attr -usedAsColor -at float3 $node;
+		
+		addAttr -ln ($attr+"R") -at "float" -p $attr $node; 
+		addAttr -ln ($attr+"G") -at "float" -p $attr $node; 
+		addAttr -ln ($attr+"B") -at "float" -p $attr $node; 
+
+		setAttr -e -keyable true $nm;
+		setAttr -type double3 $nm $c[0] $c[1] $c[2];
+
+    }
+    
+    return $nm;
+}
+
+global proc string AddEnumAttribute(string $node, string $attr, string $Field,int $value)
+{
+    string $nm = ($node + "." + $attr);
+    string $result[] = `listAttr -r -st $attr $node`;
+    if (0 == size($result))
+    {
+	
+		addAttr -ln ($attr) -at "enum" -en ($Field) $node;
+		
+		setAttr -e -keyable true $nm;
+
+		setAttr $nm $value;
+    } 
+    
+    return $nm;
+}
+
+global proc string AddIntAttribute(string $node, string $attr,int $value)
+{
+    string $nm = ($node + "." + $attr);
+    string $result[] = `listAttr -r -st $attr $node`;
+    if (0 == size($result))
+    {
+		addAttr -ln ($attr) -at long $node;
+		
+		setAttr -e -keyable true $nm;
+		
+		setAttr $nm $value;
+    }
+    
+    return $nm;
+}
+
+global proc string AddFloatAttribute(string $node, string $attr,float $value)
+{
+	string $nm = ($node + "." + $attr);
+    string $result[] = `listAttr -r -st $attr $node`;
+    if (0 == size($result))
+    {
+		addAttr -ln ($attr) -at "float" $node;
+		
+		setAttr -e -keyable true $nm;
+
+		setAttr $nm $value;
+    }
+    
+    return $nm;
+}
+
+
+global proc ulObjVarDo() {
+
+	string $sel[] = `ls -sl -ni -dag -s`;
+	
+	int $itemp;
+	
+	string $obj;
+	string $nt;
+	
+	for ($obj in $sel) {
+			
+		$nt = `nodeType $obj`;
+				
+		// Attributes for all type of objects !!!!
+		
+		// Shading Rate
+		AddFloatAttribute($obj,"tkShadingRate", 0);
+		
+		// Shader Space
+		
+		MtorAddStringAttribute($obj,"tkShaderSpace","");
+		
+		// Scale
+		AddFloatAttribute($obj,"tkScale", 0);
+		
+		
+		// Attributes for geometric object !!!!
+				
+		if ( (gmatch($nt,"mesh")) || (gmatch($nt,"nurbsSurface")) || (gmatch($nt,"subdiv")) ) {
+					
+			// Shading Rate in Shadows
+			AddFloatAttribute($obj,"tkShShadingRateSh", 0);
+		
+			//Cs 
+			AddColorAttribute($obj,"tkCs",{0.0,0.25,1.0});
+						
+						
+			//Os
+			AddColorAttribute($obj,"tkOs",{1.0,1.0,1.0});
+					
+			
+			// Displesment Bound
+			AddFloatAttribute($obj,"tkDispBound", 0);
+		
+		
+		}
+		
+		// Attributes for camnera object for env. and fog setings !!!!
+						
+		if ( gmatch($nt,"camera")) {
+
+			//Fog on | off 		  
+								  	
+			AddEnumAttribute($obj,"tkFogOn", "On:Off:",0);
+		  		  	
+		  	
+		  	// Type of fog			  
+					  	
+			AddEnumAttribute($obj,"tkFogType1", "Linear:Exponent:",1);
+		  	
+		  			  	
+		  	// Use type normal |  gradient
+											  	
+			AddEnumAttribute($obj,"tkFogType2", "Normal:Gradient:",1);
+		  	
+	  		
+		  	//Water gradient 1 
+		  	AddColorAttribute($obj,"tkFogBkColor1",{0.22743572137,0.511177233539,1.0});
+
+
+		  	AddColorAttribute($obj,"tkFogBkColor2",{0.0171550185954,0.0948619866622,0.137254901961});
+
+
+		  	// DistanceMin
+		  	AddFloatAttribute($obj,"tkFogDistMin", 100);
+		 
+			
+			// DistanceMax
+		  	AddFloatAttribute($obj,"tkFogDistMax", 2000);
+
+
+			// fog odd
+		  	AddFloatAttribute($obj,"tkFogOdd", 0.05);
+  			
+  			// fog exp Power
+			AddFloatAttribute($obj,"tkFogExpPower", 1);
+						
+			
+			// fog grad Angle
+			AddFloatAttribute($obj,"tkFogGradAngle", 20);
+			
+			
+			// fog grad Angle Offset
+			AddFloatAttribute($obj,"tkFogGradOffset", 0);
+			
+								
+			
+			//Plankton on | off 		  
+											  	
+			AddEnumAttribute($obj,"tkPlaOn", "On:Off:",0);
+    
+			// plankton file config
+			
+			
+			MtorAddStringAttribute($obj,"tkPlaPdfFile","\$WSRoot/maya_proj/ribbox/test.pfg");
+			  
+			  
+			// plankton percent
+			AddFloatAttribute($obj,"tkPlaPercent", 1);
+
+
+			// plankton	cam_near_clip
+			AddFloatAttribute($obj,"tkPlaCam_near_clip", 5);
+
+			// plankton cam_far_clip
+			AddFloatAttribute($obj,"tkPlaCam_far_clip", 200);
+			
+			// plankton	cam_near_clip w/ Anim
+			AddFloatAttribute($obj,"tkPlaAni_near_clip", 5);
+
+			// plankton	cam_far_clip w/ Anim
+			AddFloatAttribute($obj,"tkPlaAni_far_clip",  200);
+
+
+			// seed
+			
+			AddIntAttribute($obj, "tkPlaSeed",1);
+						
+			// Limit
+			
+			AddIntAttribute($obj, "tkPlaLimit",1000000);
+	  
+				
+		}
+		
+		
+		// Attributes for Ligth object !!!!
+		
+		if ((gmatch($nt,"*Light"))) {
+
+			AddEnumAttribute($obj,"ulBoundlessAngle", "Off:On:",0);
+						
+			AddEnumAttribute($obj,"ulPenumbraLinear","Smooth:Linear:",  0);
+
+			AddEnumAttribute($obj,"ulMayaPenumbra", "Pixar-style Penumbra:Maya-style Penumbra:", 0);
+
+			AddEnumAttribute($obj,"ulFalloffStyle", "Ulitka Style:Maya Style ws Atten:Linear Start-End:Smooth Start-End:",1);
+
+			// End Persent of Light Falloff
+			AddFloatAttribute($obj,"tkEndPersent", 5.0);
+			
+									
+			//decay Shadow 			
+			MtorAddAttribute($obj,"tkShDecay", "bool", 1);
+
+						
+//////						
+			// set shadow map 
+			setAttr ($obj+".dmapFilterSize") 25.0;
+			
+			// set shadow bias size 
+			setAttr ($obj+".dmapBias") 0.1;
+					
+			
+		
+			// Category of ligth  
+			MtorAddStringAttribute($obj,"tkCategory","");
+				
+			// Shadow Blur
+			AddFloatAttribute($obj,"tkShBlur", 0.001);
+				
+						
+			
+			// Do smart shadow transformation   
+			MtorAddAttribute($obj,"tkDoShTrans", "bool", 1);
+						
+			
+			// Smart shadow transformation coorsys
+			MtorAddStringAttribute($obj,"tkShCoordSys","");
+			
+			
+			
+			
+			// Gen End Dist attr
+			AddFloatAttribute($obj,"tkEndDist", 0);
+			
+			// Gen Start Dist attr
+			AddFloatAttribute($obj,"tkStartDist", 0);
+			
+			
+			// Gen Penumbra
+			AddFloatAttribute($obj,"tkPenumbra", 0);
+			
+
+			// Scale for  Blurs
+			AddFloatAttribute($obj,"tkBlurScale", 1.0);
+
+			// Attenuation for  Auto Bias
+			AddFloatAttribute($obj,"ulBiasAtten", 1.0);
+			
+			// Shadow1 Weight, Samples, Blur and Bias
+			AddFloatAttribute($obj,"weightSh", 1.0);
+			AddFloatAttribute($obj,"samplesSh", 16);
+			AddFloatAttribute($obj,"sizeSh", 0.1);
+		
+			// Shadow2 Weight, Samples, Blur and Bias
+			AddFloatAttribute($obj,"weightMSH", 1);
+			AddFloatAttribute($obj,"samplesMSH", 36);
+			AddFloatAttribute($obj,"sizeMSHMin", 0.3);
+			AddFloatAttribute($obj,"sizeMSHMax", 3);
+			AddFloatAttribute($obj,"LayersMSH", 3);
+			AddFloatAttribute($obj,"DimensionMSH", 1.5);
+			
+						
+			
+			//Spot Ligth
+			if ($nt == "spotLight" ) {
+				
+				
+			//	setAttr ($obj+".useDecayRegions") 1;
+				
+				//
+				setAttr ($obj+".startDistance1") 0;
+				setAttr ($obj+".endDistance1") 0;
+				
+				setAttr ($obj+".startDistance2") 0;
+				setAttr ($obj+".endDistance2") 0;
+				
+				
+				string $result[]= `listConnections  -d off ($obj+".tkStartDist")`;
+				
+				
+				
+				if (0 == size($result)) {
+					connectAttr -f ($obj+".startDistance3") ($obj + ".tkStartDist");
+				}
+				
+				string $result[]= `listConnections  -d off ($obj+".tkEndDist")`;
+							
+				if (0 == size($result)) {
+					connectAttr -f ($obj+".endDistance3") ($obj + ".tkEndDist");
+				}
+												
+				string $result[]= `listConnections  -d off ($obj+".tkPenumbra")`;
+				if (0 == size($result)) {
+					connectAttr -f ($obj+".penumbraAngle") ($obj + ".tkPenumbra");
+				}
+				
+				
+						
+			} else {
+				
+				// directionalLight
+				if ($nt == "directionalLight" ) {
+				
+					// Disable barn door
+					MtorAddAttribute($obj,"tkNoBarnDoor", "bool", 1);
+				
+					setAttr ($obj+".tkNoBarnDoor") 1;
+					
+					
+					// Gen decayRate
+					AddFloatAttribute($obj,"tkDecayRate",0);
+			
+				}				
+				
+				// directionalLight
+				
+				if ($nt == "ambientLight" ) {
+							
+					// Gen decayRate
+					AddFloatAttribute($obj,"tkDecayRate",0);
+										
+				}
+								
+				setAttr ($obj+".tkEndDist") 500;
+				
+			
+			
+			}
+			
+		
+			
+				
+		}
+		
+	}
+
+}
+

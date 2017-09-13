@@ -1,0 +1,13 @@
+//procedure for detecting current maya user
+
+global proc string ulDetectUser()
+{
+	string $userName = `getenv "MAYA_USER"`;
+	if($userName=="")
+	{
+		$userName = `getenv "USER"`;
+		putenv "MAYA_USER" $userName;
+		system( "setx MAYA_USER "+$userName);		
+	}
+	return $userName;
+}

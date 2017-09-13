@@ -1,0 +1,27 @@
+////////////////////////////////////////////////////////////////////////////////
+//  
+//  Script File
+//  MODIFY THIS AT YOUR OWN RISK
+//
+//  Last revision date: 10 July 2006
+//
+//  Copyright (c) 2006 Alexey Mazurenko aka Archie Zbyshek
+//  Autor: Alexey Mazurenko aka Archie Zbyshek
+//	   	   zbyshek@mail333.com
+// 
+// Description:
+// This script works in conjunction with GUI for Alfred (`az_alfredForMaya_GUI`).
+//
+// Use function `az_alfredForMaya_setBatchFile` for automatic install batch-file into userSetup.mel (recomended for studios)
+// example: az_alfredForMaya_setBatchFile("//Server/cmd/mayaRender_v70.cmd")
+//
+////////////////////////////////////////////////////////////////////////////////
+
+
+global string $az_mayaBatch_cmd;
+
+global proc az_alfredForMaya_setBatchFile(string $file)
+{
+	global string $az_mayaBatch_cmd;
+	$az_mayaBatch_cmd = toNativePath($file);	
+}

@@ -1,0 +1,51 @@
+//Constraint Rocket script and GUI
+
+global proc GG2012RocketImportAnimation(string $inNameSpaceGG, string $outNameSpaceGG)
+{
+    string $GGinputNode = "";
+    string $GGoutputNode = "";
+    string $GGRocketObjectsList[] = {"Step1_1_Transform",
+                                     "Step1_2_Transform",
+                                     "Step1_3_Transform",
+                                     "Step1_4_Transform",
+                                     "Step2_Transform",
+                                     "Step3_Transform",
+                                     "Shroud_1_Transform",
+                                     "Shroud_2_Transform"};
+    for($i=0; $i<8; $i++){
+        print ("Working with " + $GGRocketObjectsList[$i] + "object... \n");
+        $GGinputNode  = $inNameSpaceGG + ":" + $GGRocketObjectsList[$i];
+        print ("input: " + $GGinputNode + "\n");
+        $GGoutputNode = $outNameSpaceGG + ":" + $GGRocketObjectsList[$i];
+        print ("output: " + $GGoutputNode + "\n");
+        select -r $GGinputNode;
+        select -add $GGoutputNode;
+        parentConstraint;
+    }
+
+}
+
+global proc GG2012RocketImportAnimationGUI(){
+    string $GG2012RocketImportAnimationWindow = `window -title "Constrain to rocket"
+                                                        -iconName "UCT"
+                                                        -topEdge 512
+                                                        -leftEdge 512
+                                                        -widthHeight 411 150
+                                                        -resizeToFitChildren true`;
+    columnLayout -adjustableColumn true;
+        rowLayout -numberOfColumns 2 -columnWidth2 132 380 -adjustableColumn2 2;
+            text -label "input Namespace";
+            string $GGinputNameSpace = `textField -text "INPUT"`;
+        setParent ..;
+        rowLayout -numberOfColumns 2 -columnWidth2 132 380 -adjustableColumn2 2;
+            text -label "output Namespace";
+            string $GGoutputNameSpace = `textField -text "OUTPUT"`;
+        setParent ..;
+        rowLayout -numberOfColumns 3 -columnWidth3 132 132 132;
+            text -label "     ";
+            $GG_constraintBTN = `button -label "Constraint Rocket" -c ("GG2012RocketImportAnimation(`textField -q -text "+$GGinputNameSpace+"`,`textField -q -text "+$GGoutputNameSpace+"`);")`;
+            text -label "     ";
+        setParent ..;
+        
+    showWindow $GG2012RocketImportAnimationWindow;
+}
