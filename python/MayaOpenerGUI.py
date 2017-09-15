@@ -9,6 +9,7 @@ import os
 import sys
 # import maya libraries
 import maya.cmds as cmds
+import pymel.core as pm
 
 # Get reference to mainMayaWindow
 mayaMainWindowPtr = omui.MQtUtil.mainWindow()
@@ -22,8 +23,21 @@ class MayaOpenSceneGUI(QWidget):
         super(MayaOpenSceneGUI, self).__init__()
         # SetupUI - generate all interface elements
         self.setupUI()
+
+        # Variables
+        self.prj = os.environ["PRJ"]
+        self.job = os.environ["JOB"]
+        self.scenes = os.environ["SCENES"]
+        self.layout = self.scenes + "/layout"
+        self.camera = os.environ["CAMERA"]
+        self.assets = os.environ["ASSETS"]
+        # Custom worktype variable setup
+        self.worktype = os.environ["RENDER"].split("/")[-1]
+        self.worktypePath = os.path.join(self.scenes, self.worktype)
+
         # Fill Places
-        places = ["PRJ", "JOB", "SCENES", "LAYOUT", "CAMERA", "ASSETS"]
+        places = [self.worktype.capitalize(), "PRJ", "JOB", "SCENES", "LAYOUT", "CAMERA", "ASSETS"]
+
         for place in places:
             self.listPlaces.addItem(place)
 
@@ -43,6 +57,8 @@ class MayaOpenSceneGUI(QWidget):
             else:
                 self.listFiles.item(i).setBackground(QColor("#2b2b2b"))
                 count = 0
+        # show current scenes path
+        self.FillByPlace(self.worktypePath)
 
     def setupUI(self):
         # icons
@@ -54,6 +70,7 @@ class MayaOpenSceneGUI(QWidget):
         labelPlaces = QLabel("Places:")
         self.listPlaces = QListWidget()
         self.listPlaces.setFixedWidth(150)
+        self.listPlaces.setSpacing(2)
         placesLayout = QVBoxLayout()
         placesLayout.addWidget(labelPlaces, 0)
         placesLayout.addWidget(self.listPlaces, 1)
@@ -119,11 +136,14 @@ class MayaOpenSceneGUI(QWidget):
         # Buttons
         # FileType Filter Menu
         self.filterFileType = QComboBox(self)
-        self.filterFileType.addItem("*.ma  and *.mb")
-        self.filterFileType.addItem("*.ma - maya ASCII")
-        self.filterFileType.addItem("*.mb - maya binary")
-        self.filterFileType.addItem("*.fbx")
-        self.filterFileType.addItem("*.* - ma, mb, fbx")
+        self.filterFileType.addItem("*.ma  and *.mb")  # 0. Show both ma and mb files
+        self.filterFileType.addItem("*.ma  - maya ASCII")  # 1. Show only ma
+        self.filterFileType.addItem("*.mb  - maya binary")  # 2. Show only mb
+        self.filterFileType.addItem("*.mel - MEL scripts")  # 3. Show only MEL scripts
+        self.filterFileType.addItem("*.fbx")  # 4. Show only FBX
+        self.filterFileType.addItem("*.obj")  # 5. Show only obj
+        self.filterFileType.addItem("*.abc")  # 6. Show only abc
+        self.filterFileType.addItem("*.* - all types")  # 7. show all files
         self.filterFileType.setFixedWidth(150)
 
         # namespace
@@ -154,8 +174,11 @@ class MayaOpenSceneGUI(QWidget):
 
         # Signals and slots --------------------------------
         self.listPlaces.itemEntered.connect(self.PlaceSelected)
+        self.listPlaces.itemClicked.connect(self.PlaceSelected)
         self.filterFileType.currentIndexChanged.connect(self.ChangeFilter)
         self.listFiles.itemDoubleClicked.connect(self.IntoFolder)
+        self.filterFileType.currentIndexChanged.connect(self.FilterChanged)
+        self.buttonOpen.clicked.connect(self.OpenSelectedFile)
 
         # general window setup---------------------------------
         self.setLayout(globalLayout)
@@ -193,17 +216,61 @@ class MayaOpenSceneGUI(QWidget):
     def FillByPlace(self, pathInput):
         self.lineFullPath.setText(pathInput)
 
+        # Get full list of folder items
         folderItems = os.listdir(pathInput)
+
+        # To have files always appear after folders
+        # Put folders and files into separate lists
+        folderItemsfolders = []
+        folderItemsfiles = []
+
+        for folderItem in folderItems:
+            fullPath = os.path.join(pathInput, folderItem)
+            if (self.CheckType(fullPath) == "folder"):
+                folderItemsfolders.append(folderItem)
+            elif (self.CheckType(fullPath) == "file"):
+                # if we have file we should filter them using self.filterFileType
+                if (self.filterFileType.currentIndex() == 0):
+                    if ((".ma" in folderItem) or (".mb" in folderItem)):
+                        folderItemsfiles.append(folderItem)
+                elif (self.filterFileType.currentIndex() == 1):
+                    if (".ma" in folderItem):
+                        folderItemsfiles.append(folderItem)
+                elif (self.filterFileType.currentIndex() == 2):
+                    if (".mb" in folderItem):
+                        folderItemsfiles.append(folderItem)
+                elif (self.filterFileType.currentIndex() == 3):
+                    if (".mel" in folderItem):
+                        folderItemsfiles.append(folderItem)
+                elif (self.filterFileType.currentIndex() == 4):
+                    if (".fbx" in folderItem):
+                        folderItemsfiles.append(folderItem)
+                elif (self.filterFileType.currentIndex() == 5):
+                    if (".obj" in folderItem):
+                        folderItemsfiles.append(folderItem)
+                elif (self.filterFileType.currentIndex() == 6):
+                    if (".abc" in folderItem):
+                        folderItemsfiles.append(folderItem)
+                elif (self.filterFileType.currentIndex() == 7):
+                    folderItemsfiles.append(folderItem)
+
+        # Sort both lists
+        folderItemsfolders.sort()
+        folderItemsfiles.sort()
+
+        folderItemsFiltered = []
+        folderItemsFiltered.extend(folderItemsfolders)
+        folderItemsFiltered.extend(folderItemsfiles)
 
         self.listFiles.clear()
         self.listFiles.addItem("..")
         self.listFiles.item(0).setIcon(self.iconUp)
 
-        for folderItem in folderItems:
+        for folderItem in folderItemsFiltered:
             self.listFiles.addItem(folderItem)
 
         count = 0
-        for i in range(0, len(folderItems) + 1):
+        for i in range(0, len(folderItemsFiltered) + 1):
 
             fullPath = os.path.join(pathInput, self.listFiles.item(i).text())
             if (self.CheckType(fullPath) == "file"):
@@ -220,15 +287,60 @@ class MayaOpenSceneGUI(QWidget):
 
     def PlaceSelected(self, item):
         if (item.text() == "PRJ"):
-            self.FillByPlace("/fd/projects/chernobyl")
+            self.FillByPlace(self.prj)
         elif (item.text() == "JOB"):
-            self.FillByPlace("/fd/projects/chernobyl/episodes/ep02/ep02-1250")
+            self.FillByPlace(self.job)
         elif (item.text() == "SCENES"):
-            self.FillByPlace("/fd/projects/chernobyl/episodes/ep02/ep02-1250/scenes")
+            self.FillByPlace(self.scenes)
         elif (item.text() == "LAYOUT"):
-            self.FillByPlace("/fd/projects/chernobyl/episodes/ep02/ep02-1250/scenes/layout")
+            self.FillByPlace(self.layout)
         elif (item.text() == "CAMERA"):
-            self.FillByPlace("/fd/projects/chernobyl/episodes/ep02/ep02-1250/scenes/tracking")
+            self.FillByPlace(self.camera)
         elif (item.text() == "ASSETS"):
-            self.FillByPlace("/fd/projects/chernobyl/assets")
+            self.FillByPlace(self.assets)
+        elif (item.text() == self.worktype.capitalize()):
+            self.FillByPlace(self.worktypePath)
 
+    def FilterChanged(self, index):
+        # Get current path
+        pathInput = self.lineFullPath.text()
+        self.FillByPlace(pathInput)
+
+    def OpenSelectedFile(self):
+        # Get selected file name
+        if (len(self.listFiles.selectedItems()) > 0):
+            selectedFile = self.listFiles.currentItem().text()
+            currentpath = self.lineFullPath.text()
+            openPath = os.path.join(currentpath, selectedFile)
+            # Check for unsaved changes:
+            if (cmds.file(q=True, modified=True)):
+                reaction = cmds.confirmDialog(title='Scene has unsaved changes!', message='What are you going to do?',
+                                              button=['Save', 'Save+', 'Ignore and Open', 'Cancel'],
+                                              defaultButton='Save Changes then Open')  # , cancelButton='Close Dialog')
+                if (reaction == "Save"):
+                    # Saving current scene
+                    # Check if scene was ever saved
+                    currentSceneName = cmds.file(q=True, sn=True)
+                    if (currentSceneName == ""):
+                        # Get new Filename
+                        baseName = os.environ["JOB"].split("/")[-1] + "_" + os.environ["RENDER"].split("/")[
+                            -1] + "_v001.mb"
+                        newName = cmds.promptDialog(title='Enter scene name', message='Enter scene Name:',
+                                                    text=baseName, button=['OK', 'Cancel'], defaultButton='OK',
+                                                    cancelButton='Cancel', dismissString='Cancel')
+
+                        print "Need to Save to the new file"
+                    else:
+                        print "just save current changes to the same file"
+                elif (reaction == "Save+"):
+                    print "Saving to new version"
+                elif (reaction == "Ignore and Open"):
+                    # Open selected file ignoring current changes
+                    self.close()
+                    cmds.file(openPath, open=True, force=True)
+                elif (reaction == "Cancel"):
+                    print "Closing current window"
+            else:
+                print "No need to save - open window"
+
+# cmds.file(openPath, open=True)
